@@ -42,6 +42,15 @@ class Settings(BaseSettings):
     espeak_ng_exe: str = ""
     espeak_ng_data_path: str = ""
 
+    # --- Semantics (Mode B: pronunciation + meaning/context) ---
+    # LaBSE (Google, Apache-2.0) is used because its model card confirms
+    # Bengali ('bn') support explicitly — unlike more common multilingual
+    # sentence-transformer models. See semantics/README.md. Runs on CPU by
+    # default since the GPU is already used by Whisper on the dev 4GB card;
+    # override SEMANTIC_DEVICE=cuda where VRAM allows.
+    semantic_model_name: str = "sentence-transformers/LaBSE"
+    semantic_device: str = "cpu"
+
     # --- Candidate ranking weights ---
     ranking_weight_acoustic: float = 0.4
     ranking_weight_phonetic: float = 0.4

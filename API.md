@@ -73,7 +73,9 @@ Multipart form: `file` (re-pronunciation audio), `original_word` (string),
   "ranking_weights": {"acoustic": 0.4, "phonetic": 0.4, "semantic": 0.1, "contextual": 0.1}
 }
 ```
-Note: `semanticScore`/`contextualScore` are currently placeholder
-implementations (v0) — see `ml-service/correction/pronunciation_engine.py`
-docstring and `RESEARCH.md`. Not fabricated to look more sophisticated than
-they are.
+Note: `semanticScore` (Mode B only) is real LaBSE embedding similarity as of
+2026-09-06 (`ml-service/semantics/embedder.py`), falling back to a literal-
+containment heuristic only if the model can't load in a given environment —
+see `ml-service/semantics/README.md` for validation status/limitations.
+`contextualScore` is still an unimplemented placeholder, always `0.0` — see
+`ml-service/correction/pronunciation_engine.py` docstring and `RESEARCH.md`.

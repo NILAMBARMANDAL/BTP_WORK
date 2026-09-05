@@ -12,11 +12,12 @@ Evidence sources (see RESEARCH.md "evidence-separated candidate ranking"):
     this rewards candidates that are plausible corrections of what was
     actually misheard, filtering out unrelated hallucinations from the
     re-pronunciation pass.
-  - semantic_score: Mode B only. Current implementation is a v0 placeholder —
-    literal token containment between the candidate and the user-supplied
-    meaning/context text. This is NOT a validated semantic model; a real
-    embedding-based implementation is planned for Phase 6/7 (see PROGRESS.md).
-    In Mode A this is always 0.0.
+  - semantic_score: Mode B only. Cosine similarity between LaBSE embeddings
+    of the candidate word and the user-supplied meaning/context text
+    (semantics/embedder.py) — falls back to literal token containment only if
+    the embedding model can't be loaded in this environment. See
+    semantics/README.md for validation status/limitations. In Mode A this is
+    always 0.0.
   - contextual_score: placeholder, always 0.0 for now (Phase 7 — no Bengali
     language-model fluency scoring implemented yet). Documented, not
     fabricated as working.
@@ -29,6 +30,7 @@ import math
 from correction.base import Candidate, CorrectionRequest, CorrectionResult
 from phonetics.similarity import phonetic_similarity
 from ranking.ranker import current_weights, rank_candidates
+from semantics.embedder import semantic_similarity
 from whisper.engine import transcribe_word_hypotheses
 
 
@@ -38,19 +40,13 @@ def _acoustic_score_from_logprob(avg_logprob: float) -> float:
     return math.exp(avg_logprob)
 
 
-def _semantic_score_v0(candidate_text: str, meaning_context: str | None) -> float:
-    if not meaning_context:
-        return 0.0
-    return 1.0 if candidate_text in meaning_context else 0.0
-
-
 def generate_candidates(request: CorrectionRequest) -> CorrectionResult:
     hypotheses = transcribe_word_hypotheses(request.audio, request.sample_rate)
 
     candidates: list[Candidate] = []
     for hyp in hypotheses:
         semantic = (
-            _semantic_score_v0(hyp.text, request.meaning_context)
+            semantic_similarity(hyp.text, request.meaning_context or "")
             if request.mode == "pronunciation_meaning"
             else 0.0
         )
