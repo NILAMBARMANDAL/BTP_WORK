@@ -1,0 +1,22 @@
+# PyTorch is installed separately with the CUDA-specific index:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+# (see README / GPU_SETUP.md). Not listed here to avoid pip resolving a CPU-only
+# wheel from the default index.
+
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+faster-whisper==1.1.0
+imageio-ffmpeg==0.5.1
+soundfile==0.12.1
+librosa==0.10.2.post1
+numpy==1.26.4
+
+indic-transliteration==2.3.61
+python-Levenshtein==0.26.1
+
+pytest==8.3.4
+httpx==0.28.1

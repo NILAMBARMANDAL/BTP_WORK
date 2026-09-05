@@ -1,0 +1,7 @@
+# Dev-only tools, not needed to run the service itself.
+-r requirements.txt
+
+# Used only to (re)generate synthetic Bengali speech fixtures in tests/fixtures/
+# via scripts/generate_fixtures.py — real recorded speech should replace these
+# once available (see PROGRESS.md / DATA_PIPELINE.md).
+gTTS==2.5.4
