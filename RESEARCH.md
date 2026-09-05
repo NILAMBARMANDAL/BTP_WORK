@@ -101,11 +101,19 @@ evaluation in `EXPERIMENTS.md` — sample size is effectively 1-2 phrases.
 
 ## Known limitations (documented, not hidden)
 
-- No specialized Bengali phoneme/pronunciation-dictionary resource has been
-  identified and validated yet (see `ml-service/phonetics/README.md` once
-  written). Until one is validated, phonetic similarity uses the most
-  scientifically defensible available alternative, documented at the point it's
-  implemented — not invented linguistic rules.
-- Dataset selection (`DATA_PIPELINE.md`) is pending research into licensing and
-  suitability; nothing has been downloaded or used for training yet as of this
-  writing.
+- **Update 2026-09-06:** `ml-service/phonetics/espeak_g2p.py` now uses
+  espeak-ng (a real, established G2P system) as the primary phonetic method,
+  with the earlier ITRANS-transliteration heuristic (`phonetics/g2p.py`) kept
+  only as an automatic fallback. Neither has been benchmarked against a
+  human-verified Bengali phoneme reference — see
+  `ml-service/phonetics/README.md` "Known limitations" for the exact gap.
+- **Update 2026-09-06:** Mode B semantic scoring now uses real LaBSE sentence
+  embeddings (`ml-service/semantics/embedder.py`), replacing the earlier v0
+  literal-containment placeholder. Not yet benchmarked for Bengali
+  specifically — see `ml-service/semantics/README.md`.
+- **Update 2026-09-06:** Stage 1 dataset acquisition is done — a 200-sample
+  manifest from OpenSLR SLR53 (CC-BY-SA-4.0) exists at
+  `data/processed/openslr_53_shard0_manifest.json`, with a real Whisper
+  baseline evaluation run against it (`EXPERIMENTS.md` Experiment A). See
+  `DATA_PIPELINE.md` for exactly how it was acquired and what its
+  limitations are (single shard, not speaker-disjoint-verified yet).
