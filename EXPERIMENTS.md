@@ -96,6 +96,46 @@ store, `ml-service/mlruns/`).** Not a projection or smoke test.
   data/processed/openslr_53_shard0_manifest.json --n-samples 200 --seed 42
   --use-mlflow`.
 
+### Exploratory error-category analysis (2026-09-06, observational only)
+
+Per this file's "types of errors" questions and the project rule not to
+assume error categories matter without data support,
+`ml-service/scripts/analyze_baseline_errors.py` correlates per-sample CER
+(from a `--dump-per-sample` re-run of Experiment A, same 200 samples) against
+the only two categories actually derivable from OpenSLR SLR53's TSV: speech
+rate (words/second, from audio duration) and rare-word presence (word
+frequency <= 5 across the full 218,703-line TSV — the only frequency
+reference used, no external corpus). Proper nouns, place names, noise, and
+dialect were **not** analyzed — SLR53 has no such labels, and labeling them
+without a verified method would be exactly the kind of invented category the
+project rules forbid.
+
+| Speech-rate tercile | n | mean CER |
+|---|---|---|
+| slow | 67 | 0.3251 |
+| normal | 67 | 0.2743 |
+| fast | 66 | 0.2283 |
+
+| Rare-word presence | n | mean CER |
+|---|---|---|
+| has a word with freq <= 5 | 65 | 0.2876 |
+| no rare word | 135 | 0.2707 |
+
+**Honest interpretation:** rare-word presence shows the expected direction
+(slightly higher error), but the effect is small on this sample size. Speech
+rate shows the *opposite* of the naive assumption — slower speech has
+*higher* CER here, not lower — plausibly because in this prompted
+read-speech corpus, low words/second may reflect hesitant/drawn-out
+recordings or silence padding rather than genuinely easier, clearly-paced
+speech, but that's a hypothesis, not confirmed. **No significance test was
+run and this is a single 200-sample draw from one shard** — do not cite
+either result as validated without a larger sample or repeated draws.
+Reproduce: `ml-service/scripts/run_baseline_eval.py ... --dump-per-sample
+data/processed/baseline_per_sample.json` then
+`ml-service/scripts/analyze_baseline_errors.py --per-sample
+data/processed/baseline_per_sample.json --tsv
+data/raw/openslr_53/utt_spk_text.tsv`.
+
 ## Pending
 
 Experiments B–E (all correction-method comparisons) — blocked on building the

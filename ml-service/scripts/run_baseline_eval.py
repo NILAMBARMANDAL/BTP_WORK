@@ -49,6 +49,13 @@ def main():
     parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parent.parent.parent)
     parser.add_argument("--use-mlflow", action="store_true")
     parser.add_argument("--mlflow-experiment", default="bengali-asr-baseline")
+    parser.add_argument(
+        "--dump-per-sample",
+        type=Path,
+        default=None,
+        help="Write per-sample reference/hypothesis/CER/WER/duration/speaker_id to this JSON path, "
+        "so a downstream error-category analysis doesn't need to re-run expensive inference.",
+    )
     args = parser.parse_args()
 
     with args.manifest.open("r", encoding="utf-8") as f:
@@ -62,6 +69,7 @@ def main():
     print(f"Manifest dataset_id={manifest['dataset_id']} license={manifest['license']} manifest_sha256={manifest['manifest_sha256'][:12]}...")
 
     references, hypotheses, latencies_ms, skipped = [], [], [], 0
+    per_sample = []
 
     for i, sample in enumerate(sampled):
         audio_path = args.repo_root / sample["audio_path"]
@@ -77,10 +85,26 @@ def main():
             print(f"  [{i+1}/{n}] FAILED on {sample['utt_id']}: {exc}")
             skipped += 1
             continue
-        latencies_ms.append((time.time() - start) * 1000)
+        latency_ms = (time.time() - start) * 1000
+        latencies_ms.append(latency_ms)
 
         references.append(sample["transcript"])
         hypotheses.append(result.text)
+
+        if args.dump_per_sample:
+            sample_rates = compute_error_rates([sample["transcript"]], [result.text], normalize=True)
+            per_sample.append(
+                {
+                    "utt_id": sample["utt_id"],
+                    "speaker_id": sample["speaker_id"],
+                    "reference": sample["transcript"],
+                    "hypothesis": result.text,
+                    "wer": sample_rates.wer,
+                    "cer": sample_rates.cer,
+                    "audio_duration_s": len(pre.audio) / pre.sample_rate,
+                    "latency_ms": latency_ms,
+                }
+            )
 
         if (i + 1) % 10 == 0:
             print(f"  [{i+1}/{n}] processed...")
@@ -131,6 +155,12 @@ def main():
             )
             mlflow.log_dict(manifest, "manifest.json")
             print(f"Logged to MLflow experiment '{args.mlflow_experiment}'")
+
+    if args.dump_per_sample:
+        args.dump_per_sample.parent.mkdir(parents=True, exist_ok=True)
+        with args.dump_per_sample.open("w", encoding="utf-8") as f:
+            json.dump(per_sample, f, ensure_ascii=False, indent=2)
+        print(f"Wrote {len(per_sample)} per-sample results to {args.dump_per_sample}")
 
 
 if __name__ == "__main__":
