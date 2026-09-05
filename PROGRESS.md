@@ -86,12 +86,12 @@ institute GPU access — see below.
 - Docker Desktop not installed locally — containers are written but unverified. If you'd like me to proceed with a Docker Desktop install, that needs admin rights I don't have in this environment; you'd need to install it, or grant admin access.
 - Contextual (language-model fluency) scoring is entirely unimplemented (`contextual_score` always 0.0) — this is genuinely future work, not started.
 - The OpenSLR manifest is a single 200-sample pool, not yet speaker-disjoint-split into train/val/test (168 unique speakers, 31 with 2-3 samples each) — needed before running any correction-method comparison that must protect a held-out test set.
-- No systematic Whisper error-category analysis has been done yet (rare words / proper nouns / place names / phonetically-similar words / fast vs. noisy speech) — only 5 samples were manually inspected as a sanity check on the aggregate WER/CER, not a real categorized analysis.
+- Ground-truth capture (`Correction.groundTruthWord`, `Session.datasetProvenance`) and the `compute_correction_accuracy` metric now exist in the schema/evaluation code, but **no real correction-attempt data has been collected yet** — neither from live users (frontend not manually tested) nor from an evaluation harness driving the OpenSLR manifest through the correction flow. Experiments B-E remain blocked on this, not on missing scoring code.
 
 ## Test status (as of this writing, all verified locally)
 
-- ml-service: `pytest tests/ -v` → 24 passed (5 marked `@pytest.mark.model`, includes real GPU Whisper inference and real LaBSE embedding inference)
-- backend: `npm test` → 3 passed (Jest + mongodb-memory-server)
+- ml-service: `pytest tests/ -v` → 28 passed (5 marked `@pytest.mark.model`, includes real GPU Whisper inference and real LaBSE embedding inference)
+- backend: `npm test` → 5 passed (Jest + mongodb-memory-server)
 - frontend: `npm run build` → succeeds; `npm run lint` → clean
 
 ## Experiments completed
@@ -103,25 +103,29 @@ earlier `GPU_SETUP.md`/`RESEARCH.md` findings about model-size script
 correctness and স/শ ambiguity remain real observations from smoke-testing,
 not rigorous experiments — still flagged as such, not upgraded to "results."
 
+**Exploratory error-category analysis — real, observational, not
+significance-tested.** Rare words show a small expected CER increase (0.288
+vs 0.271); speech rate shows the opposite of the naive assumption (slower
+speech has *higher* CER here). See `EXPERIMENTS.md` "Exploratory
+error-category analysis" for the full numbers and caveats — single
+200-sample draw, not a validated conclusion.
+
 ## Next steps (in rough priority order)
 
 1. Speaker-disjoint train/validation/test split of the OpenSLR pool (and any
    future dataset additions) before running correction-method comparisons —
    currently a single undivided 200-sample pool.
-2. Systematic Whisper error-category analysis (rare words, proper nouns,
-   place names, phonetically-similar words, speech rate, noise) on a larger
-   sample than the 5 manually inspected so far, to decide which correction
-   scenarios are actually worth targeting — per the project rule not to
-   assume categories matter without data support.
-3. Build the real correction-attempt dataset schema/recording path end-to-end
-   (backend already has the raw/prediction/feedback/validated distinction in
-   its Mongoose schema — verify it captures every field the spec requires:
-   attempt_number, correction method, optional meaning, speaker metadata).
-4. Manually test the frontend in a real browser (mic permissions, recording,
-   word selection, correction flow) — still not done in any session so far.
-5. Run Experiments B-E (pronunciation/syllable/meaning-mode correction
-   comparisons) once 1-3 above exist — currently blocked on real correction
+2. Drive real correction-attempt data through the now-complete schema: either
+   (a) manually test the frontend in a real browser end-to-end (mic
+   permissions, recording, word selection, correction flow — still not done
+   in any session so far), or (b) build a small evaluation-harness script
+   that replays OpenSLR manifest samples through `POST /api/sessions` (with
+   `datasetId`/`utteranceId`/`groundTruthTranscript`) → `/corrections` (with
+   `groundTruthWord`) → `/corrections/:id/attempts`, to get real
+   `compute_correction_accuracy` numbers without waiting on live users.
+3. Run Experiments B-E (pronunciation/syllable/meaning-mode correction
+   comparisons) once 1-2 above exist — currently blocked on real correction
    interaction data, not on scoring-method implementation (which is done).
-6. Verify Docker builds once Docker Desktop is available.
-7. ZenML pipeline once the above stages are individually stable (per the
+4. Verify Docker builds once Docker Desktop is available.
+5. ZenML pipeline once the above stages are individually stable (per the
    project's "no fake wrapper pipeline" rule).
