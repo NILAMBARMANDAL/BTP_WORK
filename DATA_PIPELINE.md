@@ -31,7 +31,17 @@ confirmed, until Stage 1 (below) actually happens.
   errors we care about (which is where Whisper actually makes mistakes) is
   unverified.
 
-### 2. Mozilla Common Voice — Bengali
+### 2. Mozilla Common Voice — Bengali — **ACCESS PATH CHANGED, re-verify before use**
+**Update 2026-09-05:** Hugging Face's `mozilla-foundation/common_voice_*` dataset
+pages now state *"Effective October 2025, Mozilla Common Voice datasets are
+now exclusively available through Mozilla Data Collective"* — the HF mirror
+this section originally described is no longer the access path. The
+CC0-license and hours/speaker figures below are what was reported before that
+move and have **not been re-verified against Mozilla Data Collective**. Before
+relying on Common Voice Bengali, check its current terms on Mozilla Data
+Collective directly — do not assume the CC0 license or these numbers still
+apply unchanged.
+
 - **Source:** https://commonvoice.mozilla.org/ (Hugging Face:
   `mozilla-foundation/common_voice_17_0` or later, per-version datasets)
 - **License:** CC0 (public domain dedication) — most permissive option found
@@ -88,6 +98,55 @@ confirmed, until Stage 1 (below) actually happens.
   its **standardized evaluation splits**, which would help with the
   "protect evaluation data / speaker-disjoint splits" requirement
   (`RESEARCH.md`, spec section 32) rather than for training data itself.
+
+## Actual acquisition attempt (2026-09-05)
+
+Proceeded with OpenSLR SLR53 (CC-BY-SA-4.0, a clear license appropriate for
+academic thesis use with attribution — not the kind of "unclear licensing"
+that needs to block on user input) rather than waiting, per updated
+instructions to take ownership of the data side. Real, verified facts from
+this attempt:
+
+- `data/raw/openslr_53/LICENSE` and `utt_spk_text.tsv` (15.8MB, 218,703
+  transcript lines, real Bengali text) downloaded successfully and directly
+  (no auth/gating) from openslr.org.
+- The full audio is split into 16 zip shards (~900MB each, ~14.7GB total).
+  **Downloading a full shard over this connection was too slow to be
+  practical** (~5MB/min observed, i.e. ~3 hours for one shard) — this may be
+  connection-specific, not necessarily a permanent constraint.
+- The OpenSLR server supports HTTP range requests (`Accept-Ranges: bytes`
+  confirmed via `curl -I`), so the plan is to fetch only the specific files
+  needed for a small evaluation subset (e.g. via `remotezip`) rather than a
+  full shard — avoiding a multi-hour download for what's meant to be a
+  "scientifically defensible subset," not the full corpus.
+- Mozilla Common Voice's Hugging Face access path changed in October 2025
+  (see above) — not yet re-attempted through the new Mozilla Data Collective
+  path.
+
+**Acquisition completed (2026-09-06):** 200 samples fetched via `remotezip`
+range requests (no full-shard download), built into a versioned manifest by
+`scripts/build_manifest.py`, seed 42:
+`data/processed/openslr_53_shard0_manifest.json`
+(`manifest_sha256=ceb1f02c502b319e08e94bf474061b2e31c6fb503cb58583d344c2b0311f6b9`
+— this hashes the exact sampled utterance-id/transcript/path selection, not
+the full remote shard, which was never downloaded; see the script for why).
+Total download for the 200 audio files: ~14MB (vs. ~900MB for the full
+shard). This manifest was used for Experiment A in `EXPERIMENTS.md` — a real
+Whisper baseline run, not a placeholder.
+
+**Known limitations of this manifest, stated plainly:**
+- Single shard (`asr_bengali_0.zip`) out of 16 — not a sample of the full
+  SLR53 corpus, so speaker/dialect diversity claims can't be made from it.
+- This manifest is a single undivided pool (168 unique speakers across 200
+  samples; 31 speakers contribute 2-3 samples each, checked directly from
+  `speaker_id` in the manifest) — it is **not yet split** into
+  train/validation/test, so the "protect evaluation data / speaker-disjoint
+  splits" requirement (`RESEARCH.md` / `EXPERIMENTS.md` "Data leakage
+  protocol") doesn't yet apply to it. Treat it as a baseline/dev pool only;
+  a future split must keep each speaker's samples entirely within one split.
+- A single random 200-sample draw; error-rate figures from it (see
+  `EXPERIMENTS.md` Experiment A) are a real first measurement, not yet
+  validated for stability across multiple draws or against a second dataset.
 
 ## Recommendation (not yet decided — for user review before committing to Stage 2)
 
