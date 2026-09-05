@@ -1,0 +1,149 @@
+.app {
+  text-align: left;
+  padding: 24px 32px 64px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.app header {
+  text-align: left;
+  margin-bottom: 32px;
+}
+
+.app h1 {
+  font-size: 32px;
+  text-align: left;
+}
+
+.subtitle {
+  color: var(--text);
+  margin-top: 8px;
+}
+
+section {
+  margin-bottom: 32px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.hint {
+  color: var(--text);
+  font-style: italic;
+}
+
+.error-banner {
+  color: #d33;
+  background: rgba(221, 51, 51, 0.08);
+  border: 1px solid rgba(221, 51, 51, 0.3);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-top: 8px;
+}
+
+.success-banner {
+  color: #1a7f37;
+  background: rgba(26, 127, 55, 0.08);
+  border: 1px solid rgba(26, 127, 55, 0.3);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.recorder {
+  margin-top: 8px;
+}
+
+.recording-indicator {
+  color: #d33;
+  margin-right: 12px;
+  font-weight: 600;
+}
+
+.recorder-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.transcript {
+  font-size: 24px;
+  line-height: 2;
+}
+
+.transcript-word {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+
+.transcript-word:hover {
+  background: var(--accent-bg);
+}
+
+.transcript-word--selected {
+  background: var(--accent-bg);
+  outline: 2px solid var(--accent-border);
+}
+
+.transcript-word--corrected {
+  text-decoration: underline;
+  text-decoration-color: #1a7f37;
+  text-decoration-thickness: 2px;
+}
+
+.correction-panel {
+  background: var(--code-bg);
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+.correction-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 12px 0;
+}
+
+fieldset label {
+  display: block;
+  margin: 4px 0;
+  cursor: pointer;
+}
+
+.meaning-input {
+  margin: 12px 0;
+}
+
+.meaning-input textarea {
+  width: 100%;
+  min-height: 60px;
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.attempt-history ol {
+  padding-left: 20px;
+}
+
+.attempt-history li {
+  margin-bottom: 12px;
+  padding: 8px;
+  border-radius: 6px;
+}
+
+.attempt--accepted {
+  background: rgba(26, 127, 55, 0.08);
+}
+
+.latency {
+  color: var(--text);
+  font-size: 0.85em;
+}
+
+button {
+  cursor: pointer;
+}
