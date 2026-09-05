@@ -4,6 +4,7 @@ import pytest
 
 from evaluation.metrics import (
     average_latency_ms,
+    compute_correction_accuracy,
     compute_correction_stats,
     compute_error_rates,
     normalize_transcript,
@@ -75,3 +76,21 @@ def test_average_latency():
 def test_average_latency_empty_raises():
     with pytest.raises(ValueError):
         average_latency_ms([])
+
+
+def test_correction_accuracy_only_counts_evaluable_corrections():
+    corrections = [
+        {"ground_truth_word": "সোনার", "accepted_prediction": "সোনার"},  # correct
+        {"ground_truth_word": "শোনার", "accepted_prediction": "সোনার"},  # wrong
+        {"ground_truth_word": None, "accepted_prediction": "কম্পিউটার"},  # excluded — no ground truth
+    ]
+    result = compute_correction_accuracy(corrections)
+    assert result.n_evaluable == 2
+    assert result.n_correct == 1
+    assert result.accuracy == 0.5
+
+
+def test_correction_accuracy_none_when_no_ground_truth_available():
+    result = compute_correction_accuracy([{"ground_truth_word": None, "accepted_prediction": "x"}])
+    assert result.n_evaluable == 0
+    assert result.accuracy is None

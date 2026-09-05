@@ -9,8 +9,12 @@ change — do not let it drift from `backend/src/routes/*` / `ml-service/api/mai
 `{ "status": "ok" }`
 
 ### `POST /api/sessions`
-Multipart form: `file` (audio, required), `speakerId` (optional string).
-Creates a session and stores the original audio. Returns `{ session }`.
+Multipart form: `file` (audio, required), `speakerId` (optional string),
+`datasetId`/`utteranceId`/`groundTruthTranscript` (optional strings, for
+evaluation-harness sessions replaying a known dataset sample only — never set
+for live user recordings). Creates a session and stores the original audio.
+Returns `{ session }` with `session.datasetProvenance` (all fields `null` for
+ordinary live sessions).
 
 ### `POST /api/sessions/:id/transcribe`
 Sends the session's stored audio to the ML service, persists the structured
@@ -21,9 +25,14 @@ transcript. Returns `{ transcript }` where `transcript.words` is
 Returns `{ session, transcript }` (latest transcript for that session, if any).
 
 ### `POST /api/corrections`
-Body (JSON): `{ sessionId, transcriptId, wordIndex, mode }` where
-`mode` is `"pronunciation_only"` or `"pronunciation_meaning"`.
-Flags one transcript word for correction. Returns `{ correction }`.
+Body (JSON): `{ sessionId, transcriptId, wordIndex, mode, groundTruthWord? }`
+where `mode` is `"pronunciation_only"` or `"pronunciation_meaning"`.
+`groundTruthWord` is optional and meant only for evaluation-harness callers
+that independently know the true word (e.g. from a dataset reference
+transcript) — it is never inferred from the transcript or from any
+prediction, and is kept entirely separate from `acceptedAttemptId`
+(user-feedback signal) and each attempt's `prediction` (model output). Flags
+one transcript word for correction. Returns `{ correction }`.
 
 ### `POST /api/corrections/:id/attempts`
 Multipart form: `file` (re-pronunciation audio, required),

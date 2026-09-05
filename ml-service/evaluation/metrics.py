@@ -98,3 +98,35 @@ def average_latency_ms(latencies_ms: list[float]) -> float:
     if not latencies_ms:
         raise ValueError("cannot average zero latencies")
     return sum(latencies_ms) / len(latencies_ms)
+
+
+@dataclass
+class CorrectionAccuracy:
+    n_evaluable: int  # corrections with a known ground_truth_word
+    n_correct: int  # accepted prediction matched ground truth
+    accuracy: float | None  # None if n_evaluable == 0 — not fabricated as 0.0
+
+
+def compute_correction_accuracy(corrections: list[dict]) -> CorrectionAccuracy:
+    """Correction accuracy vs. GROUND TRUTH — distinct from
+    compute_correction_stats' success_rate (which only measures whether the
+    USER accepted something, not whether that acceptance was objectively
+    correct). Per RESEARCH.md's evidence-separation rule and
+    backend/src/models/Correction.js's groundTruthWord field: only
+    evaluation-harness corrections (against a known dataset reference) carry
+    a ground_truth_word, so corrections without one are excluded rather than
+    assumed correct or incorrect.
+
+    corrections: list of dicts with {"ground_truth_word": str | None,
+    "accepted_prediction": str | None} — the latter is the prediction text of
+    whichever attempt the user accepted (None if nothing was accepted yet)."""
+    evaluable = [c for c in corrections if c.get("ground_truth_word")]
+    if not evaluable:
+        return CorrectionAccuracy(n_evaluable=0, n_correct=0, accuracy=None)
+
+    correct = [c for c in evaluable if c.get("accepted_prediction") == c["ground_truth_word"]]
+    return CorrectionAccuracy(
+        n_evaluable=len(evaluable),
+        n_correct=len(correct),
+        accuracy=len(correct) / len(evaluable),
+    )

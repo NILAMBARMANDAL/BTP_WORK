@@ -29,7 +29,8 @@ function extFromMime(mime) {
   return "bin";
 }
 
-// POST /api/sessions  (multipart: file=<audio>, speakerId?=<string>)
+// POST /api/sessions  (multipart: file=<audio>, speakerId?=<string>,
+// datasetId?/utteranceId?/groundTruthTranscript?=<string> for evaluation-harness sessions only)
 router.post("/", audioUpload.single("file"), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: "Audio file is required" });
@@ -39,6 +40,11 @@ router.post("/", audioUpload.single("file"), async (req, res, next) => {
       speakerId: req.body.speakerId || null,
       originalAudioRef: audioRef,
       status: "created",
+      datasetProvenance: {
+        datasetId: req.body.datasetId || null,
+        utteranceId: req.body.utteranceId || null,
+        groundTruthTranscript: req.body.groundTruthTranscript || null,
+      },
     });
 
     res.status(201).json({ session });

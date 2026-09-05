@@ -28,10 +28,13 @@ function extFromMime(mime) {
   return "bin";
 }
 
-// POST /api/corrections  { sessionId, transcriptId, wordIndex, mode }
+// POST /api/corrections  { sessionId, transcriptId, wordIndex, mode, groundTruthWord? }
+// groundTruthWord is accepted ONLY for evaluation-harness callers that
+// independently know the true word (e.g. from a dataset reference
+// transcript) — never inferred here from the transcript/prediction itself.
 router.post("/", async (req, res, next) => {
   try {
-    const { sessionId, transcriptId, wordIndex, mode } = req.body;
+    const { sessionId, transcriptId, wordIndex, mode, groundTruthWord } = req.body;
     if (!sessionId || !transcriptId || wordIndex === undefined || !mode) {
       return res.status(400).json({ error: "sessionId, transcriptId, wordIndex, mode are required" });
     }
@@ -51,6 +54,7 @@ router.post("/", async (req, res, next) => {
       wordIndex: Number(wordIndex),
       originalWord: word.text,
       mode,
+      groundTruthWord: groundTruthWord || null,
     });
 
     res.status(201).json({ correction });
