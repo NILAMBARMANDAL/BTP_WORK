@@ -1,9 +1,8 @@
 # Experiments
 
-**Status: no experiments have been run yet.** This file defines what will be
-measured and how; results get filled in (with MLflow tracking, once Phase 9
-begins) only as they actually happen. Never treat anything in this file as a
-result until a corresponding MLflow run / evaluation output exists.
+**Status: Experiment A (baseline) has a real, MLflow-tracked result — see
+below.** Everything else in this file remains a plan, not a result, until a
+corresponding MLflow run / evaluation output exists for it too.
 
 ## Core experiments (spec section 31)
 
@@ -50,11 +49,59 @@ not yet implemented since no dataset has been ingested (`DATA_PIPELINE.md`).
 
 ## Completed experiments
 
-None.
+### Experiment A — Original Whisper baseline (2026-09-06)
+
+**Real, measured result — MLflow run `bengali-asr-baseline` (local file
+store, `ml-service/mlruns/`).** Not a projection or smoke test.
+
+- **Dataset:** 200-sample manifest sampled (seed 42) from OpenSLR SLR53
+  shard 0, fetched via HTTP range requests (no full-shard download — see
+  `DATA_PIPELINE.md`). Manifest:
+  `data/processed/openslr_53_shard0_manifest.json`,
+  `manifest_sha256=ceb1f02c502b319e08e94bf474061b2e31c6fb503cb58583d344c2b0311f6b9`.
+  License: CC-BY-SA-4.0.
+- **Model:** `large-v3`, `int8_float16`, CUDA (GTX 1650, 4GB VRAM), beam
+  size 5, language forced to `bn`. faster-whisper (CTranslate2).
+- **Preprocessing:** default (`audio/preprocessing.py` — resample to 16kHz
+  mono; VAD/denoise/trim off).
+- **Results (all 200 samples transcribed successfully, 0 skipped):**
+
+  | Metric | Normalized* | Raw |
+  |---|---|---|
+  | WER | 0.8106 | 0.8185 |
+  | CER | 0.2580 | 0.2604 |
+
+  \*Normalized = punctuation stripped, Unicode NFC, whitespace collapsed on
+  both reference and hypothesis before scoring (`evaluation/metrics.py::normalize_transcript`)
+  — removes non-substantive differences like Whisper emitting a trailing "?"
+  that the reference transcript doesn't have.
+- **Avg latency:** 3718.8 ms/sample (single 4GB GPU, large-v3 int8, no
+  batching — not representative of a production/institute-GPU setup).
+- **Manual sanity check (5 random samples, not included in the aggregate
+  above, just qualitative):** the errors are real phonetic/character-level
+  substitutions and boundary mistakes (e.g. reference "মাথায় বাঁধা জাতীয়
+  পতাকা" vs. hypothesis "মাথাই বাধা জাতে ও পতকা"), not a data-pipeline
+  artifact — confirmed by inspecting raw audio-path-to-transcript pairs
+  directly, not inferred from the aggregate score alone.
+- **Interpretation (not yet a conclusion — one dataset, one model config):**
+  WER is much higher than CER, which is expected for Bengali given a fair
+  number of near-miss character substitutions per word (a WER metric scores
+  a word wrong even with a single wrong character) — this is a real property
+  of the error distribution here, not a metric bug (the punctuation-inflation
+  bug that caused an earlier, higher WER reading was found and fixed; see
+  `normalize_transcript`). Whether this WER level is typical for OpenSLR
+  SLR53 vs. specific to this random 200-sample draw has not been checked
+  against a larger sample or a second dataset yet.
+- **Reproduce:** `ml-service/scripts/run_baseline_eval.py --manifest
+  data/processed/openslr_53_shard0_manifest.json --n-samples 200 --seed 42
+  --use-mlflow`.
 
 ## Pending
 
-Everything above — blocked on: (1) a dataset decision (`DATA_PIPELINE.md` —
-needs a licensing decision from the user for OpenSLR's CC-BY-SA-4.0 and
-OOD-Speech's unresolved license), (2) `ml-service/evaluation/` implementation,
-(3) MLflow integration (Phase 9).
+Experiments B–E (all correction-method comparisons) — blocked on building the
+correction-attempt dataset from real user interactions (or a controlled
+proxy), per `DATA_PIPELINE.md`'s correction-dataset design section. The
+Whisper-error analysis needed to pick which categories (rare words, proper
+nouns, etc.) are actually worth targeting has not been done yet — the 5
+manually-inspected samples above are illustrative, not a systematic error
+analysis.
