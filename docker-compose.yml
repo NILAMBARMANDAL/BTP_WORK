@@ -1,0 +1,57 @@
+# NOT YET TESTED — no Docker Desktop available in the dev environment this was
+# written in (see PROGRESS.md "Known limitations"). Verify on first real run.
+
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: ../docker/ml-service.Dockerfile
+    env_file: .env
+    ports:
+      - "8000:8000"
+    # Requires the NVIDIA Container Toolkit on the host. Remove this block for
+    # CPU-only environments (and set WHISPER_DEVICE=cpu in .env).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../docker/backend.Dockerfile
+    env_file: .env
+    environment:
+      - MONGO_MODE=uri
+      - MONGO_URI=mongodb://mongo:27017/btp_asr
+      - ML_SERVICE_URL=http://ml-service:8000
+    ports:
+      - "4000:4000"
+    depends_on:
+      - mongo
+      - ml-service
+    volumes:
+      - audio-storage:/app/storage/audio
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/frontend.Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  mongo-data:
+  audio-storage:

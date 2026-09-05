@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  ml-service:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ml-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # faster-whisper (CTranslate2) doesn't require torch, so CI doesn't
+      # install it — torch is only needed for the Windows cuBLAS/cuDNN DLL
+      # workaround in api/main.py, which is a no-op on Linux CI runners.
+      - run: pip install -r requirements.txt
+      # Tests marked @pytest.mark.model load and run real Whisper inference —
+      # slow, and (per GPU_SETUP.md) our default model is large-v3, too slow
+      # to download+run on a CI CPU runner on every push. They're skipped
+      # here and must be run locally (`pytest tests/ -v`, no -m filter) before
+      # relying on them — CI intentionally does NOT claim to cover that path.
+      - run: python -m pytest tests/ -v -m "not model"
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm run lint
