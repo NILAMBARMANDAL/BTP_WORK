@@ -46,6 +46,9 @@ mlartifacts/
 ml-service/models/*
 !ml-service/models/.gitkeep
 
+# Vendored native tools (espeak-ng, fetched/extracted by scripts/setup_espeak.ps1 — not committed, ~37MB binary)
+ml-service/vendor/
+
 # OS / editor
 .DS_Store
 Thumbs.db

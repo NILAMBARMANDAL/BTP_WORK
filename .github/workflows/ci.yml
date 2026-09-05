@@ -35,6 +35,7 @@ jobs:
       # faster-whisper (CTranslate2) doesn't require torch, so CI doesn't
       # install it — torch is only needed for the Windows cuBLAS/cuDNN DLL
       # workaround in api/main.py, which is a no-op on Linux CI runners.
+      - run: sudo apt-get update && sudo apt-get install -y espeak-ng
       - run: pip install -r requirements.txt
       # Tests marked @pytest.mark.model load and run real Whisper inference —
       # slow, and (per GPU_SETUP.md) our default model is large-v3, too slow

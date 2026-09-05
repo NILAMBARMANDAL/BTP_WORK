@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     preproc_normalize: bool = False
     preproc_denoise: bool = False
 
+    # --- Phonetics ---
+    # Path to an espeak-ng executable. Empty string = not configured, in which
+    # case phonetics/similarity.py falls back to shutil.which("espeak-ng")
+    # (works out of the box on Linux/Docker after `apt-get install espeak-ng`),
+    # and if that also fails, falls back further to the ITRANS+Levenshtein
+    # heuristic (see phonetics/README.md). On Windows, run
+    # scripts/setup_espeak.ps1 and point this at the extracted .exe.
+    espeak_ng_exe: str = ""
+    espeak_ng_data_path: str = ""
+
     # --- Candidate ranking weights ---
     ranking_weight_acoustic: float = 0.4
     ranking_weight_phonetic: float = 0.4
