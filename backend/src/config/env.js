@@ -2,11 +2,6 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-function bool(value, fallback) {
-  if (value === undefined) return fallback;
-  return value === "true" || value === "1";
-}
-
 export const env = {
   port: Number(process.env.PORT ?? 4000),
   nodeEnv: process.env.NODE_ENV ?? "development",
