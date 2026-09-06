@@ -9,10 +9,18 @@ class MlServiceError extends Error {
 }
 
 async function postForm(path, form) {
-  const res = await fetch(`${env.mlServiceUrl}${path}`, {
-    method: "POST",
-    body: form,
-  });
+  let res;
+  try {
+    res = await fetch(`${env.mlServiceUrl}${path}`, {
+      method: "POST",
+      body: form,
+    });
+  } catch (cause) {
+    // fetch() throws a bare "fetch failed" (no context) on connection
+    // refused/DNS failure — surface something a user-facing error message
+    // can actually explain, rather than leaking a raw Node/undici message.
+    throw new MlServiceError(`ml-service unreachable at ${env.mlServiceUrl} (${cause.message})`, 503);
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new MlServiceError(`ml-service ${path} failed: ${res.status} ${body}`, res.status);
