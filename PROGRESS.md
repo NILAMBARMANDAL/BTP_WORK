@@ -7,14 +7,21 @@ trusting it in a future session._
 ## Current phase
 
 **Phases 1-6 complete with real (not placeholder) implementations; Stage 1
-dataset + Whisper baseline evaluation + MLflow tracking now exist with real
-measured results.** Phonetic scoring now uses espeak-ng (real G2P) rather
-than the old ITRANS heuristic; semantic scoring (Mode B) now uses real LaBSE
-sentence embeddings rather than the old literal-containment placeholder.
-Remaining major gaps: systematic Whisper error-category analysis, a real
-correction-attempt dataset from actual user interactions, speaker-disjoint
-train/val/test splits, ZenML pipeline, CI hardening for the new deps, and
-institute GPU access — see below.
+dataset + Whisper baseline evaluation + speaker-disjoint split + a first
+(TTS-proxy) correction-method comparison all exist with real, MLflow-tracked
+results.** Phonetic scoring uses espeak-ng (real G2P); semantic scoring
+(Mode B) uses real LaBSE sentence embeddings. The OpenSLR 200-sample pool is
+now split speaker-disjointly into train/val/test (`scripts/split_dataset.py`),
+and Experiments B/C (slow vs. syllable-level correction) have a real, if
+TTS-proxy-limited and small-sample, result: **both accuracies are very low
+(3.4% slow, 0% syllable), and syllable-level underperformed whole-word slow
+re-pronunciation** — see `EXPERIMENTS.md` for the full result and the
+candidate-generation limitation (no lexicon constraint) that most plausibly
+explains it. Remaining major gaps: real correction-attempt data from an
+actual live user session (frontend still not manually browser-tested),
+Experiment D (meaning/context — deliberately not proxy-synthesized, see
+`EXPERIMENTS.md`), ZenML pipeline, CI hardening for the new deps, Docker
+build verification, and institute GPU access — see below.
 
 ## Environment (inspected 2026-09-05)
 
@@ -62,6 +69,8 @@ institute GPU access — see below.
   - [x] `scripts/build_manifest.py` — fetched 200 real audio samples from OpenSLR SLR53 shard 0 via `remotezip` HTTP range requests (~14MB transferred, not the full ~900MB shard); manifest at `data/processed/openslr_53_shard0_manifest.json`
   - [x] `ml-service/scripts/run_baseline_eval.py` — ran real Whisper (`large-v3`, int8_float16, CUDA) inference on all 200 samples: **WER 0.8106 (normalized) / 0.2580 CER**, avg latency 3718.8ms/sample — see `EXPERIMENTS.md` Experiment A for full detail and manual sanity-check of 5 sample transcripts
   - [x] MLflow tracking wired up and used for this real run (`ml-service/mlruns/`, experiment `bengali-asr-baseline`) — Phase 9 started with a real experiment, not a stub
+  - [x] `scripts/split_dataset.py` — speaker-disjoint greedy bin-packing split of the 200-sample manifest into train(140)/val(30)/test(30) by whole speaker group, seed 42, sanity-asserted no speaker crosses splits; output `data/processed/openslr_53_splits.json`
+  - [x] `ml-service/scripts/run_correction_eval.py` — Experiments B/C (slow vs. syllable-level correction) against the real correction engine, using gTTS as a documented proxy for human re-pronunciation audio (no live user data exists yet); real result: 3.4% (1/29) slow, 0.0% (0/27) syllable correction accuracy on the 30-sample speaker-disjoint test split — see `EXPERIMENTS.md` for the full result and the candidate-generation limitation this points to. MLflow-tracked (`bengali-asr-correction` experiment).
 - [x] **backend** (Node/Express):
   - [x] Mongoose models with the raw/prediction/feedback/validated/ground-truth distinction enforced in schema (`Correction`, `CorrectionAttempt`, append-only attempts)
   - [x] Routes: sessions (create/transcribe/get), corrections (create/attempt/accept/get)
@@ -85,8 +94,8 @@ institute GPU access — see below.
 - Production MongoDB hosting (self-hosted on institute server vs. managed service) not yet decided.
 - Docker Desktop not installed locally — containers are written but unverified. If you'd like me to proceed with a Docker Desktop install, that needs admin rights I don't have in this environment; you'd need to install it, or grant admin access.
 - Contextual (language-model fluency) scoring is entirely unimplemented (`contextual_score` always 0.0) — this is genuinely future work, not started.
-- The OpenSLR manifest is a single 200-sample pool, not yet speaker-disjoint-split into train/val/test (168 unique speakers, 31 with 2-3 samples each) — needed before running any correction-method comparison that must protect a held-out test set.
-- Ground-truth capture (`Correction.groundTruthWord`, `Session.datasetProvenance`) and the `compute_correction_accuracy` metric now exist in the schema/evaluation code, but **no real correction-attempt data has been collected yet** — neither from live users (frontend not manually tested) nor from an evaluation harness driving the OpenSLR manifest through the correction flow. Experiments B-E remain blocked on this, not on missing scoring code.
+- Ground-truth capture (`Correction.groundTruthWord`, `Session.datasetProvenance`) and the `compute_correction_accuracy` metric now exist in the schema/evaluation code. A first correction-method comparison now exists (Experiments B/C, see above), but it used a gTTS-synthesized proxy for re-pronunciation audio, not real live-user data — the frontend still has not been manually tested end-to-end in a browser by any session, and the low/negative result should be re-checked against real user audio before treating it as validated.
+- Production deployment is unimplemented: no Vercel deploy, no hosted backend, no institute GPU access confirmed reachable. This needs the user to provide GitHub/Vercel authentication and institute GPU/network access before it can proceed — see spec section 41's list of things only the user can provide.
 
 ## Test status (as of this writing, all verified locally)
 
@@ -110,22 +119,47 @@ speech has *higher* CER here). See `EXPERIMENTS.md` "Exploratory
 error-category analysis" for the full numbers and caveats — single
 200-sample draw, not a validated conclusion.
 
+**Experiments B/C (slow vs. syllable correction) — real, TTS-proxy-limited
+result.** 3.4% (1/29) correction accuracy for whole-word slow
+re-pronunciation vs. 0.0% (0/27) for syllable-level, on the 30-sample
+speaker-disjoint test split — syllable-level *underperformed*, the opposite
+of the project's working hypothesis. See `EXPERIMENTS.md` for the full
+result, the gTTS-proxy limitation, and the likely cause (unconstrained
+candidate generation producing multi-word garbage on concatenated-syllable
+audio) — not yet validated against real human re-pronunciation.
+
 ## Next steps (in rough priority order)
 
-1. Speaker-disjoint train/validation/test split of the OpenSLR pool (and any
-   future dataset additions) before running correction-method comparisons —
-   currently a single undivided 200-sample pool.
-2. Drive real correction-attempt data through the now-complete schema: either
-   (a) manually test the frontend in a real browser end-to-end (mic
-   permissions, recording, word selection, correction flow — still not done
-   in any session so far), or (b) build a small evaluation-harness script
-   that replays OpenSLR manifest samples through `POST /api/sessions` (with
-   `datasetId`/`utteranceId`/`groundTruthTranscript`) → `/corrections` (with
-   `groundTruthWord`) → `/corrections/:id/attempts`, to get real
-   `compute_correction_accuracy` numbers without waiting on live users.
-3. Run Experiments B-E (pronunciation/syllable/meaning-mode correction
-   comparisons) once 1-2 above exist — currently blocked on real correction
-   interaction data, not on scoring-method implementation (which is done).
-4. Verify Docker builds once Docker Desktop is available.
-5. ZenML pipeline once the above stages are individually stable (per the
-   project's "no fake wrapper pipeline" rule).
+1. **Done (2026-09-06):** speaker-disjoint train/val/test split
+   (`scripts/split_dataset.py` → `data/processed/openslr_53_splits.json`).
+2. **Done, but proxy-limited (2026-09-06):** Experiments B/C ran via
+   `ml-service/scripts/run_correction_eval.py` using gTTS-synthesized
+   re-pronunciation as a documented stand-in for real human audio — see
+   `EXPERIMENTS.md`. Real correction-attempt data from an actual live user
+   session (via the frontend, not yet manually browser-tested) or from the
+   backend API driven by a harness against `POST /api/sessions` →
+   `/corrections` → `/corrections/:id/attempts` is still needed to validate
+   (or overturn) the proxy result and to unblock a non-proxy Experiment B/C/E.
+3. Investigate constraining correction candidates to a real Bengali lexicon
+   near the original wrong word, rather than accepting Whisper's raw
+   unconstrained re-transcription of the correction clip — flagged in
+   `EXPERIMENTS.md` as the most plausible cause of the syllable-condition's
+   very low accuracy (multi-word garbage output on concatenated-syllable
+   clips), not yet implemented.
+4. Experiment D (meaning/context, Mode B) — deliberately not run with a
+   synthetic proxy (see `EXPERIMENTS.md`); needs either real user context or
+   an explicit, user-approved synthesis method.
+5. Manually test the frontend in a real browser end-to-end (mic permissions,
+   recording, word selection, correction flow, accept/retry) — still not done
+   in any session so far; this is also what production browser verification
+   (spec section 33) depends on.
+6. Verify Docker builds once Docker Desktop is available (still not installed
+   locally as of this session — no admin rights in this dev environment).
+7. ZenML pipeline once the above stages are individually stable (per the
+   project's "no fake wrapper pipeline" rule) — arguably close now
+   (ingest → split → baseline eval → error analysis → correction eval are all
+   real, separately-runnable stages), worth scaffolding next.
+8. Production deployment (Vercel frontend, backend hosting, institute
+   GPU/FastAPI reachability) — still blocked on external credentials/access
+   the user must provide (GitHub auth for CI/deploy hooks, Vercel login,
+   institute GPU SSH/VPN access); see "Known issues" below.

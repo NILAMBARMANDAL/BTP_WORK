@@ -1,8 +1,10 @@
 # Experiments
 
-**Status: Experiment A (baseline) has a real, MLflow-tracked result — see
-below.** Everything else in this file remains a plan, not a result, until a
-corresponding MLflow run / evaluation output exists for it too.
+**Status: Experiments A (baseline) and B/C (slow vs. syllable correction, on a
+documented TTS proxy) have real, MLflow-tracked results — see below.**
+Experiment D (meaning/context) and a non-proxy re-run of B/C/E remain plans,
+not results, until real user correction data or an approved synthesis method
+exists.
 
 ## Core experiments (spec section 31)
 
@@ -136,12 +138,106 @@ data/processed/baseline_per_sample.json` then
 data/processed/baseline_per_sample.json --tsv
 data/raw/openslr_53/utt_spk_text.tsv`.
 
+### Speaker-disjoint split (2026-09-06)
+
+`scripts/split_dataset.py` split the 200-sample OpenSLR SLR53 pool (168
+speakers) into train/val/test by whole speaker (greedy bin-packing on
+speaker-group size, largest first, targeting 70/15/15) — no speaker appears
+in more than one split (asserted in the script). Result: train 140
+samples/108 speakers, val 30/30, test 30/30 (exact counts/ratios recorded in
+`data/processed/openslr_53_splits.json`, gitignored per `DATA_PIPELINE.md`
+versioning strategy — reproducible from the manifest + `--seed 42`). This
+unblocks Experiments B–E's leakage protocol (spec section 20/32); it does
+**not** by itself supply correction interaction data.
+
+### Experiments B/C — Slow vs. syllable-level re-pronunciation correction (2026-09-06)
+
+**Real Whisper + real correction-engine result, but on a documented PROXY
+input, not real human re-pronunciation — read the limitation before citing
+this anywhere.** No live user has used the frontend yet (see `PROGRESS.md`),
+so `ml-service/scripts/run_correction_eval.py` synthesizes the
+re-pronunciation audio with gTTS (`lang=bn, slow=True`) as a stand-in for a
+human re-pronouncing the word, then runs that synthetic audio through the
+exact same production correction engine
+(`correction/pronunciation_engine.py`) real user audio would go through. This
+measures "can the engine recover the right word from a clean, correctly
+pronounced re-pronunciation clip" — a real, useful signal — but says nothing
+about real human re-pronunciation behavior (hesitation, self-mispronunciation,
+noise, accent).
+
+- **Dataset:** the 30-sample speaker-disjoint `test` split above, filtered to
+  the 30 samples with a real Whisper word-level error (from Experiment A's
+  per-sample dump) that word-align to exactly one clean single-word
+  substitution (`difflib` opcode-based alignment); 0 samples were skipped for
+  lacking a clean single-word substitution in this split.
+- **Conditions:**
+  - **slow** — one gTTS clip of the whole ground-truth word, `slow=True`.
+  - **syllable** — the word is heuristically syllabified
+    (`phonetics/syllables.py`), each syllable synthesized as its own gTTS
+    clip, concatenated with 250ms silence gaps.
+- **Correction engine:** Mode A (`pronunciation_only`), candidates are
+  Whisper re-transcriptions of the correction clip at multiple decoding
+  temperatures (`whisper/engine.py::transcribe_word_hypotheses`) ranked by
+  acoustic + phonetic score against the original wrong word — **there is no
+  dictionary/lexicon constraint on candidates**, which matters for
+  interpreting the syllable result below.
+- **Results:**
+
+  | Condition | n attempts | n correct | correction accuracy | avg latency |
+  |---|---|---|---|---|
+  | slow | 29 | 1 | 0.034 | 8398 ms |
+  | syllable | 27 | 0 | 0.000 | 9225 ms |
+
+  (n differs slightly between conditions because 2 syllable-condition runs
+  threw and were recorded as failures, not silently counted as correct or
+  skipped — see script.)
+- **Honest interpretation:** both accuracies are very low, and on this data
+  **syllable-level re-pronunciation did not outperform whole-word slow
+  re-pronunciation — it was worse (0/27 vs 1/29)**, which is the opposite of
+  what the project hypothesizes syllable-level correction should do. Manual
+  inspection of the syllable-condition predictions (e.g. ground truth
+  "মাথায়" → predicted "মা হা জো নুক্ত"; "জয়টাও" → "জা, জা, নুক তাটা, ও")
+  shows Whisper transcribing the concatenated-syllable clips as multi-word
+  garbage rather than the target word, not a scoring bug. The most plausible
+  cause, given candidates come from unconstrained Whisper re-transcription
+  (no lexicon): gTTS-synthesized syllables glued with silence gaps do not
+  sound like genuine syllable-by-syllable human speech (no coarticulation
+  across the gap, TTS may pick an arbitrary/wrong reading per isolated
+  syllable), and Whisper handles the resulting acoustic artifacts by
+  hallucinating multiple short "words" instead of one. The slow-condition
+  errors are milder (near-miss single/double-word outputs like "দের তার" for
+  "দেড়টার") but still mostly wrong. **This is a real, if small-sample (n=27–29)
+  and proxy-limited, negative finding against the current unconstrained
+  candidate-generation design for syllable-level correction** — it does not
+  mean human syllable-by-syllable pronunciation would fail the same way, and
+  does not mean the hypothesis is false, only that this specific TTS-proxy
+  measurement of it, with this candidate-generation method, performed badly.
+  A likely next step (not yet done, a design decision not made unilaterally
+  here beyond flagging it): constrain candidates to a real Bengali lexicon
+  near the original wrong word, rather than accepting raw unconstrained
+  Whisper output, before re-testing syllable-level correction.
+- **Reproduce:** `ml-service/scripts/run_correction_eval.py --splits
+  data/processed/openslr_53_splits.json --per-sample
+  data/processed/baseline_per_sample.json --split-name test --use-mlflow`
+  (requires internet for gTTS and a working Whisper model). Logged to MLflow
+  experiment `bengali-asr-correction`, run `correction-eval-test`.
+
+### Experiment D (meaning/context, Mode B) — not run
+
+Deliberately not attempted with a synthetic proxy: synthesizing
+non-answer-leaking meaning/context text (text that helps disambiguate the
+word without literally containing it) is a methodology decision that affects
+what the experiment actually measures, not a routine engineering choice — see
+`run_correction_eval.py`'s docstring. This needs either real user-supplied
+context or an explicit, user-approved synthesis method before it can be run
+without risk of a misleading result.
+
 ## Pending
 
-Experiments B–E (all correction-method comparisons) — blocked on building the
-correction-attempt dataset from real user interactions (or a controlled
-proxy), per `DATA_PIPELINE.md`'s correction-dataset design section. The
-Whisper-error analysis needed to pick which categories (rare words, proper
-nouns, etc.) are actually worth targeting has not been done yet — the 5
-manually-inspected samples above are illustrative, not a systematic error
-analysis.
+Experiment E (hybrid ranking) and a real (non-proxy) re-run of B/C/D — all
+blocked on real correction-attempt data from actual user interactions via the
+frontend, which still has not been manually tested end-to-end in a browser
+(see `PROGRESS.md`). The candidate-generation lexicon-constraint idea flagged
+above under Experiments B/C should be evaluated before re-running those, since
+the current negative result may reflect that gap rather than the underlying
+hypothesis.
