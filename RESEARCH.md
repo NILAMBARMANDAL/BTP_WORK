@@ -116,4 +116,15 @@ evaluation in `EXPERIMENTS.md` — sample size is effectively 1-2 phrases.
   `data/processed/openslr_53_shard0_manifest.json`, with a real Whisper
   baseline evaluation run against it (`EXPERIMENTS.md` Experiment A). See
   `DATA_PIPELINE.md` for exactly how it was acquired and what its
-  limitations are (single shard, not speaker-disjoint-verified yet).
+  limitations are (single shard, so speaker/dialect diversity claims can't be
+  made from it).
+- **Update 2026-09-06/07:** the 200-sample pool is now speaker-disjoint split
+  (`scripts/split_dataset.py`), and a first correction-method comparison
+  (Experiments B/C: slow vs. syllable re-pronunciation) ran on the `test`
+  split — using a gTTS-synthesized proxy for human re-pronunciation, not real
+  user audio (no live user has used the frontend yet). Both accuracies were
+  very low and syllable-level *underperformed* whole-word slow
+  re-pronunciation (0% vs. 3.4%), the opposite of the project's working
+  hypothesis — see `EXPERIMENTS.md` for the full result and the likely cause
+  (unconstrained Whisper-only candidate generation, no lexicon). Not yet
+  validated against real human re-pronunciation.
