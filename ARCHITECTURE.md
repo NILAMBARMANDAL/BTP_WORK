@@ -160,10 +160,25 @@ Run the real (non-smoke) pipeline with `python -m pipelines.evaluation_pipeline`
 (defaults match the official 200-sample/seed-42 configuration already used for
 the standalone scripts).
 
-## Deployment (planned, not yet built)
+## Deployment
 
-Docker Compose for local multi-service dev; institute GPU for ml-service in
-production/benchmarking; object storage for audio at scale. See `GPU_SETUP.md`
-and `docker-compose.yml`. **Note:** Docker Desktop is not installed in the
-current dev environment (no admin rights) — compose files are written but
-unverified locally until Docker is available; see `PROGRESS.md`.
+**Frontend and backend are actually deployed and verified live** (2026-09-06/07
+— see `PROGRESS.md` "Production deployment" for the full verification detail,
+including the real Atlas IP-whitelist failure and fix):
+- Frontend: Vercel, static Vite build, manual `vercel --prod` redeploy per
+  push (GitHub auto-connect failed, not yet resolved).
+- Backend: Render web service (`render.yaml`), `autoDeploy: yes` on `main` —
+  this one DOES auto-deploy on future pushes. Connected to a real MongoDB
+  Atlas cluster.
+- **ml-service is not deployed** — no institute GPU access, and the user
+  declined paid cloud GPU hosting this session. It needs a persistent
+  GPU-capable (or at least long-running CPU) process, which rules out
+  Vercel/Render-style serverless/free-web-service hosting. This is the one
+  gap between the current deployment and full production functionality.
+
+For local multi-service dev: Docker Compose (`docker-compose.yml`). Docker
+Desktop is not installed in the current dev environment (no admin rights) —
+compose files are written but unverified locally until Docker is available;
+see `PROGRESS.md`. Object storage for audio at scale (spec section 15) is
+also not yet implemented — Render's free-tier disk is ephemeral, documented
+in `render.yaml`'s header comment.

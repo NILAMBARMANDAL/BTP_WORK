@@ -20,8 +20,70 @@ candidate-generation limitation (no lexicon constraint) that most plausibly
 explains it. Remaining major gaps: real correction-attempt data from an
 actual live user session (frontend still not manually browser-tested),
 Experiment D (meaning/context — deliberately not proxy-synthesized, see
-`EXPERIMENTS.md`), ZenML pipeline, CI hardening for the new deps, Docker
-build verification, and institute GPU access — see below.
+`EXPERIMENTS.md`), CI hardening for the new deps, Docker build verification,
+and institute/cloud GPU access — see below.
+
+## Production deployment (2026-09-06/07) — REAL, verified live
+
+**Frontend (Vercel):** https://frontend-three-psi-tz8kxezc8c.vercel.app —
+deployed via `vercel --prod` from `frontend/` (user authenticated via
+`vercel login`; GitHub auto-connect for this project failed both times it was
+tried — "Failed to connect ... Make sure ... you have access to the
+repository" — so this project needs a manual `vercel --prod` redeploy after
+future pushes, not automatic). Verified with direct `curl`, not just the CLI's
+own success message: HTML/JS/CSS assets all return 200, the production JS
+bundle contains zero occurrences of `127.0.0.1` (confirms the
+localhost-fallback fix below actually took effect), and after wiring
+`VITE_BACKEND_URL` the bundle was re-verified to contain the real backend
+hostname.
+
+**Backend (Render):** https://btp-backend-ofur.onrender.com — created via
+Render's REST API (user supplied a scoped, revocable API key; the GitHub
+repo connection needed no manual OAuth step because the user's Render account
+already had broad GitHub access from prior unrelated projects — flagged as a
+lucky case, not something to assume will always work). `render.yaml` defines
+the service (`rootDir: backend`, `npm ci` / `npm start`, `/health` check,
+`autoDeploy: yes` on `main`). **First deploy failed** with a real,
+non-fabricated error pulled from Render's logs API:
+`MongooseServerSelectionError: ... IP that isn't whitelisted` — the user's
+MongoDB Atlas cluster's Network Access list didn't include Render's (dynamic,
+free-tier) outbound IPs. Fixed by the user adding `0.0.0.0/0` to Atlas Network
+Access (documented tradeoff: this is access-anywhere at the network level,
+still gated by username/password auth — a static-IP Render add-on is the
+paid alternative, not pursued). Redeploy succeeded; **verified live with real
+requests, not just Render's dashboard status**:
+  - `GET /health` -> `{"status":"ok"}`, HTTP 200
+  - `GET /api/sessions/<fake-id>` -> `{"error":"Session not found"}`, HTTP 404
+    (proves a real MongoDB Atlas round-trip — a bad connection would have
+    surfaced as a 500, not a clean 404)
+  - `OPTIONS`/CORS check confirms `Access-Control-Allow-Origin` is restricted
+    to exactly the deployed frontend origin (see `CORS_ORIGIN` below), not `*`
+
+**Backend CORS hardening:** `backend/src/app.js` + `config/env.js` now read a
+`CORS_ORIGIN` allowlist env var (spec section 32: "restricted CORS"); unset
+falls back to permissive `cors()` for local dev only. Set to the real
+deployed frontend origin in `render.yaml` and verified via a live CORS
+preflight check above.
+
+**Frontend production-hygiene fix:** `frontend/src/api/client.js` previously
+defaulted to `http://127.0.0.1:4000` whenever `VITE_BACKEND_URL` was unset —
+a literal localhost reference that spec section 3 explicitly forbids in
+production. Now only the Vite dev server gets that fallback
+(`import.meta.env.DEV`); an unset var in a production build falls back to a
+same-origin relative path instead. Verified absent from the deployed bundle
+(see above).
+
+**Known, honestly-stated gap: ml-service (FastAPI/Whisper) is NOT deployed.**
+The user was asked directly and chose to skip both institute GPU access and a
+paid cloud GPU service this session, keeping ml-service local-dev-only rather
+than have Claude attempt a fake or non-functional remote setup. Consequence:
+the live frontend + backend chain is real and reachable, but
+`POST /api/sessions/:id/transcribe` and the correction endpoints will fail
+with a network error in production, because `ML_SERVICE_URL` on Render points
+at a placeholder (`http://127.0.0.1:8000`, unreachable from Render's servers
+by construction) — this is expected, not a bug, and is the single missing
+link for genuine end-to-end production functionality. See "Next steps" if/when
+GPU hosting becomes available.
 
 ## Environment (inspected 2026-09-05)
 
