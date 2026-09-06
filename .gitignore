@@ -16,6 +16,9 @@ ml-service/__pycache__/
 *.egg-info/
 ml-service/.cache/
 
+# ZenML local repo metadata / SQLite store
+.zen/
+
 # Env
 .env
 .env.local

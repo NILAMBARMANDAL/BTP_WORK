@@ -47,6 +47,7 @@ build verification, and institute GPU access — see below.
 - **Semantic scoring (Mode B): real LaBSE embeddings now primary**, not the v0 literal-containment placeholder — `ml-service/semantics/embedder.py`. Chose LaBSE (Google, Apache-2.0) over the more commonly recommended `paraphrase-multilingual-mpnet-base-v2` specifically because the latter's published language list does not include Bengali and LaBSE's does — checked, not assumed. Runs on CPU by default (`SEMANTIC_DEVICE=cpu`) to avoid contending with Whisper for the 4GB GPU. Falls back to literal containment if the model can't load. See `ml-service/semantics/README.md`.
 - Evaluation metrics (`ml-service/evaluation/metrics.py`) use `jiwer` (established library) for WER/CER, plus a `normalize_transcript()` step (strip punctuation, NFC-normalize, collapse whitespace) applied before scoring by default — found necessary after observing Whisper emit trailing punctuation (e.g. "?") that OpenSLR reference transcripts don't have, which was inflating WER on non-substantive differences. Both normalized and raw rates are reported for transparency.
 - Dataset acquisition: fetched a 200-sample subset of OpenSLR SLR53 via HTTP range requests (`remotezip`), not a full ~900MB shard download — see `DATA_PIPELINE.md`. A manifest (`data/processed/openslr_53_shard0_manifest.json`) pins the exact sample selection via a `manifest_sha256` (hash of the selection, not the full remote shard, which was never downloaded).
+- ZenML: `zenml[server]==0.96.4`, not bare `zenml` — the base package is missing `pymysql`/`sqlmodel`, which even the local SQLite metadata store imports transitively; confirmed by hitting `ModuleNotFoundError` for both before installing the `[server]` extra. This forced an upgrade of `fastapi` (0.115.6 -> 0.138.2), `pydantic` (2.10.4 -> 2.12.5), and `starlette` (0.41.3 -> 1.6.0) to satisfy zenml's own pins — re-ran the full fast ml-service test suite immediately after (23 passed, 5 deselected model tests) to confirm this didn't break `api/main.py`; no regression found. ZenML's daemon-based orchestration features are unavailable on Windows ("Daemon functionality is currently not supported on Windows" — printed by `zenml init`), so the pipeline runs synchronously in-process, which is sufficient for this project's scale and is not a functional limitation for what section 23 asks for (config-driven staged orchestration, not distributed scheduling).
 
 ## Completed
 
@@ -71,6 +72,7 @@ build verification, and institute GPU access — see below.
   - [x] MLflow tracking wired up and used for this real run (`ml-service/mlruns/`, experiment `bengali-asr-baseline`) — Phase 9 started with a real experiment, not a stub
   - [x] `scripts/split_dataset.py` — speaker-disjoint greedy bin-packing split of the 200-sample manifest into train(140)/val(30)/test(30) by whole speaker group, seed 42, sanity-asserted no speaker crosses splits; output `data/processed/openslr_53_splits.json`
   - [x] `ml-service/scripts/run_correction_eval.py` — Experiments B/C (slow vs. syllable-level correction) against the real correction engine, using gTTS as a documented proxy for human re-pronunciation audio (no live user data exists yet); real result: 3.4% (1/29) slow, 0.0% (0/27) syllable correction accuracy on the 30-sample speaker-disjoint test split — see `EXPERIMENTS.md` for the full result and the candidate-generation limitation this points to. MLflow-tracked (`bengali-asr-correction` experiment).
+  - [x] `pipelines/` — ZenML pipeline (`zenml[server]==0.96.4`) orchestrating ingest -> split -> baseline eval -> error analysis -> correction eval as config-driven steps; verified with a real, if small (`--smoke`, 8-sample), end-to-end run. See `ARCHITECTURE.md` "Pipeline orchestration".
 - [x] **backend** (Node/Express):
   - [x] Mongoose models with the raw/prediction/feedback/validated/ground-truth distinction enforced in schema (`Correction`, `CorrectionAttempt`, append-only attempts)
   - [x] Routes: sessions (create/transcribe/get), corrections (create/attempt/accept/get)
@@ -155,11 +157,13 @@ audio) — not yet validated against real human re-pronunciation.
    (spec section 33) depends on.
 6. Verify Docker builds once Docker Desktop is available (still not installed
    locally as of this session — no admin rights in this dev environment).
-7. ZenML pipeline once the above stages are individually stable (per the
-   project's "no fake wrapper pipeline" rule) — arguably close now
-   (ingest → split → baseline eval → error analysis → correction eval are all
-   real, separately-runnable stages), worth scaffolding next.
-8. Production deployment (Vercel frontend, backend hosting, institute
-   GPU/FastAPI reachability) — still blocked on external credentials/access
-   the user must provide (GitHub auth for CI/deploy hooks, Vercel login,
-   institute GPU SSH/VPN access); see "Known issues" below.
+7. **Done (2026-09-06/07):** ZenML pipeline (`pipelines/`) chaining ingest ->
+   split -> baseline eval -> error analysis -> correction eval as real,
+   config-driven steps — verified end-to-end with a small (`--smoke`,
+   8-sample) real run; see `ARCHITECTURE.md` "Pipeline orchestration".
+8. Production deployment: GitHub push access was confirmed working this
+   session (a cached credential, not something set up by any prior session)
+   and the user approved pushing + attempting a real Vercel frontend deploy —
+   in progress this session, see below. Institute GPU reachability and a
+   hosted backend remain unresolved; the user chose not to pursue institute
+   GPU access this session.

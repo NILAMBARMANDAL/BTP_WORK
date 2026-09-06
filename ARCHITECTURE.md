@@ -120,6 +120,46 @@ meaning, and mode (A/B). `Candidate` carries: text, and the separated
 acoustic/phonetic/semantic/contextual scores (before weighting), so ranking
 weights can be changed post-hoc during evaluation without re-running inference.
 
+## Pipeline orchestration (ZenML) (`pipelines/`)
+
+`pipelines/evaluation_pipeline.py` (`bengali_asr_evaluation_pipeline`) chains
+five stages as ZenML steps (`pipelines/steps.py`): dataset ingestion ->
+speaker-disjoint split -> Whisper baseline eval -> error-category analysis ->
+correction-method eval (Experiments A/B/C). Every stage that has its logic
+inline in an existing standalone script (ingest, split, baseline eval,
+correction eval — `scripts/build_manifest.py`, `scripts/split_dataset.py`,
+`ml-service/scripts/run_baseline_eval.py`,
+`ml-service/scripts/run_correction_eval.py`) is orchestrated by invoking that
+exact script via `subprocess`, not by re-implementing its logic — a single
+source of truth, so the pipeline cannot silently diverge from what
+`EXPERIMENTS.md` documents as directly reproducible. The error-analysis step
+is the one exception: it imports `analyze_baseline_errors.py`'s already-pure
+functions directly. All parameters (dataset paths, sample counts, split
+ratios, seed) are step/pipeline arguments, never hardcoded — per spec section
+44, scaling to more data is a parameter change, not a code change.
+
+**Verified (2026-09-06/07):** `zenml init` at the repo root, then
+`python -m pipelines.evaluation_pipeline --max-samples 8 --smoke` run
+end-to-end from a clean process — all 5 steps completed successfully with
+real Whisper inference and real correction-engine scoring on a small
+(8-sample) slice, using the `--smoke` flag's separate artifact
+paths/MLflow-experiment names so it never overwrites the official 200-sample
+Experiment A/B/C results already recorded in `EXPERIMENTS.md`. This is a
+pipeline-*mechanics* verification, not a new experiment result — the 8-sample
+numbers it produced are not meant to be cited. Two environment notes, not
+correctness bugs: (1) `zenml[server]` (not bare `zenml`) is required — the
+base package is missing `pymysql`/`sqlmodel` that even the local SQLite
+metadata store needs; this forced `fastapi`/`pydantic`/`starlette` version
+bumps, re-verified against the full ml-service test suite afterward with no
+regressions (see `PROGRESS.md`). (2) ZenML's daemon-based orchestration is
+unavailable on Windows ("Daemon functionality is currently not supported on
+Windows"), so runs execute synchronously in-process — sufficient at this
+project's scale.
+
+Run the real (non-smoke) pipeline with `python -m pipelines.evaluation_pipeline`
+(defaults match the official 200-sample/seed-42 configuration already used for
+the standalone scripts).
+
 ## Deployment (planned, not yet built)
 
 Docker Compose for local multi-service dev; institute GPU for ml-service in

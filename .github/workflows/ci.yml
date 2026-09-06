@@ -43,6 +43,10 @@ jobs:
       # here and must be run locally (`pytest tests/ -v`, no -m filter) before
       # relying on them — CI intentionally does NOT claim to cover that path.
       - run: python -m pytest tests/ -v -m "not model"
+      # Cheap smoke check that the ZenML pipeline definition + steps at least
+      # import and construct cleanly (not a real pipeline run — that needs a
+      # real Whisper model + real audio, out of scope for a CPU CI runner).
+      - run: cd .. && python -c "from pipelines.evaluation_pipeline import bengali_asr_evaluation_pipeline"
 
   frontend:
     runs-on: ubuntu-latest

@@ -17,7 +17,7 @@ backend/        Node.js + Express — orchestration, sessions, MongoDB persisten
 ml-service/     Python + FastAPI — Whisper, correction engine, phonetics, semantics
 evaluation/     CER/WER and correction-accuracy evaluation tooling
 experiments/    Experiment configs/results (tracked via MLflow once populated)
-pipelines/      ZenML pipelines (added once a real multi-step workflow exists)
+pipelines/      ZenML pipeline chaining ingest -> split -> baseline eval -> error analysis -> correction eval
 configs/        Shared configuration (model choice, preprocessing, ranking weights)
 scripts/        One-off / operational scripts
 tests/          Cross-cutting integration & e2e tests
