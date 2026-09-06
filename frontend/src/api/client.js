@@ -1,7 +1,13 @@
 // All backend HTTP calls live here — components never call fetch() directly.
 // Keeping this separate from UI components per ARCHITECTURE.md.
 
-const BASE_URL = import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:4000";
+// Never bake a localhost fallback into a production build (spec: "no
+// localhost references in production"). Dev server (`npm run dev`) still
+// defaults to the local backend for convenience; a production build with
+// VITE_BACKEND_URL unset falls back to a same-origin relative path instead —
+// which fails cleanly (visible network error) rather than silently pointing
+// at whichever machine happens to be running the deployed static site.
+const BASE_URL = import.meta.env.VITE_BACKEND_URL ?? (import.meta.env.DEV ? "http://127.0.0.1:4000" : "");
 
 class ApiError extends Error {
   constructor(message, status) {
