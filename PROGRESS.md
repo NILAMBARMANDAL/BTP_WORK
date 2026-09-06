@@ -86,7 +86,7 @@ build verification, and institute GPU access — see below.
   - [x] `npm run build` succeeds; dev server verified serving correctly via curl
   - [x] **NOT visually verified in an actual browser** — no browser automation tool was connected this session (user chose to skip Claude-in-Chrome install). The mic-permission flow, click-to-select-word interaction, and full recording round-trip have only been verified at the code/build level, not by actually using the UI. This should be manually tested by the user, or automated in a future session once browser tools are available.
 - [x] Docker files + docker-compose (written, **not build-tested**; espeak-ng now added to the ml-service image)
-- [x] GitHub Actions CI (`backend` + `ml-service` (non-model tests only) + `frontend` build/lint) — espeak-ng apt-get step added for the new phonetics path; still not yet run against the real GitHub remote, only validated locally by running the equivalent commands
+- [x] GitHub Actions CI (`backend` + `ml-service` (non-model tests only) + `frontend` build/lint) — **verified running for real on GitHub as of 2026-09-07** (run `34054417242`, all 3 jobs `success`, ~2m38s), after this session confirmed GitHub push access was actually available and the user approved pushing; a ZenML pipeline-import smoke check was added to the `ml-service` job for this push
 - [x] Real dataset research (`DATA_PIPELINE.md`): OpenSLR SLR53, Common Voice Bengali, AI4Bharat IndicVoices/-R, Bengali.AI OOD-Speech, IndicSUPERB — sizes/licenses sourced from web search; **OpenSLR SLR53 now actually acquired** (200-sample manifest, see above), others still unverified/unused
 
 ## Known issues / open questions for the user
