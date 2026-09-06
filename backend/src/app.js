@@ -9,7 +9,11 @@ import { env } from "./config/env.js";
 export function createApp() {
   const app = express();
 
-  app.use(cors());
+  // Spec section 32: "restricted CORS" for production. CORS_ORIGIN is a
+  // comma-separated allowlist (e.g. the deployed frontend's origin); unset
+  // (dev default) allows any origin, matching prior behavior for local dev.
+  const allowedOrigins = env.corsOrigins;
+  app.use(cors(allowedOrigins ? { origin: allowedOrigins } : {}));
   app.use(express.json());
   if (!env.isTest) app.use(morgan("dev"));
 

@@ -1,0 +1,39 @@
+# Render Blueprint for the Node/Express backend (spec section 29: "backend
+# must be deployable and reachable by the Vercel frontend"). ml-service is
+# NOT deployed here — it needs a persistent GPU, which Render's free/starter
+# web-service plans don't provide, and the user chose to keep ml-service
+# local-only for now rather than pay for cloud GPU hosting or use unavailable
+# institute GPU access (see PROGRESS.md).
+#
+# Deploy: Render dashboard -> New -> Blueprint -> select this repo. Render
+# reads this file and creates the service below; you'll be prompted to fill
+# in the `sync: false` env vars (MONGO_URI, ML_SERVICE_URL) since those are
+# either secret or not yet known.
+#
+# KNOWN LIMITATION, stated plainly: Render's free/starter web-service disk is
+# ephemeral (wiped on redeploy/restart). AUDIO_STORAGE_DIR here is local
+# filesystem, matching current dev behavior — fine for a demo, but per spec
+# section 15 real production audio storage should move to object storage
+# (e.g. S3) before this is relied on for anything users need to persist.
+services:
+  - type: web
+    name: btp-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_MODE
+        value: uri
+      - key: MONGO_URI
+        sync: false
+      - key: ML_SERVICE_URL
+        sync: false
+      - key: CORS_ORIGIN
+        value: https://frontend-three-psi-tz8kxezc8c.vercel.app
+      - key: MAX_AUDIO_UPLOAD_MB
+        value: "25"
