@@ -168,6 +168,14 @@ def main():
     parser.add_argument("--dump-per-sample", type=Path, default=None)
     parser.add_argument("--use-mlflow", action="store_true")
     parser.add_argument("--mlflow-experiment", default="bengali-asr-correction")
+    parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=None,
+        help="Cap the number of error samples evaluated, for a fast bounded smoke/verification "
+        "run before committing to a full split (e.g. after a correction-engine perf change). "
+        "Unset = the whole split, matching prior behavior.",
+    )
     args = parser.parse_args()
 
     with args.splits.open("r", encoding="utf-8") as f:
@@ -178,6 +186,9 @@ def main():
     test_utt_ids = set(splits["splits"][args.split_name]["utt_ids"])
     candidates_pool = [r for r in per_sample if r["utt_id"] in test_utt_ids and r["wer"] > 0]
     print(f"{len(candidates_pool)} / {len(test_utt_ids)} '{args.split_name}'-split samples have a real Whisper error.")
+    if args.max_samples is not None:
+        candidates_pool = candidates_pool[: args.max_samples]
+        print(f"--max-samples set: evaluating only the first {len(candidates_pool)} (not the full split).")
 
     attempts: list[AttemptResult] = []
     skipped_no_substitution = 0

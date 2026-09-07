@@ -57,6 +57,17 @@ class Settings(BaseSettings):
     ranking_weight_semantic: float = 0.1
     ranking_weight_contextual: float = 0.1
 
+    # --- Lexicon-augmented candidate generation (phonetics/lexicon.py) ---
+    # See EXPERIMENTS.md "Experiments B/C" lexicon-constraint follow-up: adds
+    # real-Bengali-word candidates phonetically near Whisper's raw
+    # re-transcription of a correction clip, instead of relying on that raw
+    # output alone. Empty path = use the OpenSLR SLR53 TSV already downloaded
+    # for Stage 1 (phonetics/lexicon.py's default path resolution).
+    correction_lexicon_constraint_enabled: bool = True
+    correction_lexicon_tsv_path: str = ""
+    correction_lexicon_top_k: int = 3
+    correction_lexicon_max_edit_distance: int = 3
+
     # --- Service ---
     ml_service_host: str = "0.0.0.0"
     ml_service_port: int = 8000

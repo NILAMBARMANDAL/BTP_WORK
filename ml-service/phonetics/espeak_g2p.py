@@ -34,6 +34,7 @@ def is_available() -> bool:
     return _resolve_espeak_exe() is not None
 
 
+@lru_cache(maxsize=8192)
 def to_phonemes(bengali_text: str) -> str | None:
     """Returns espeak-ng's ASCII phoneme transcription of the text, or None
     if espeak-ng isn't available (caller should fall back to g2p.py).
@@ -42,6 +43,15 @@ def to_phonemes(bengali_text: str) -> str | None:
     (or any non-ASCII) text as a Windows subprocess argument was observed to
     corrupt the encoding / crash the process — a real issue hit during
     integration, not a hypothetical concern.
+
+    Cached (pure function of `bengali_text`, and espeak-ng's own binary/data
+    path don't change at runtime): each call spawns a real OS subprocess plus
+    a temp-file write, which is slow (tens of ms) — a real, measured cost that
+    matters now that phonetics/lexicon.py can call this many times per
+    candidate when re-ranking a lexicon shortlist. Discovered during the
+    2026-09-07 lexicon-augmentation correction-eval re-run taking far longer
+    than the pre-lexicon baseline; this cache is the fix, not a preemptive
+    optimization.
     """
     exe = _resolve_espeak_exe()
     if exe is None or not bengali_text:

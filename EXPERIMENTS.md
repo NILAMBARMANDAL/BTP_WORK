@@ -216,11 +216,71 @@ noise, accent).
   here beyond flagging it): constrain candidates to a real Bengali lexicon
   near the original wrong word, rather than accepting raw unconstrained
   Whisper output, before re-testing syllable-level correction.
-- **Reproduce:** `ml-service/scripts/run_correction_eval.py --splits
-  data/processed/openslr_53_splits.json --per-sample
-  data/processed/baseline_per_sample.json --split-name test --use-mlflow`
-  (requires internet for gTTS and a working Whisper model). Logged to MLflow
-  experiment `bengali-asr-correction`, run `correction-eval-test`.
+- **Reproduce:** `uv run --directory ml-service python
+  scripts/run_correction_eval.py --splits data/processed/openslr_53_splits.json
+  --per-sample data/processed/baseline_per_sample.json --split-name test
+  --use-mlflow` (requires internet for gTTS and a working Whisper model).
+  Logged to MLflow experiment `bengali-asr-correction`, run
+  `correction-eval-test`.
+
+### Experiments B/C re-run — lexicon-augmented candidate generation (2026-09-07/08)
+
+The candidate-generation lexicon constraint flagged as a next step above was
+implemented (`ml-service/phonetics/lexicon.py`) and the exact same eval
+re-run on the exact same 30-sample speaker-disjoint test split, so this is a
+real before/after comparison, not a new/different experiment. Design: each
+raw Whisper hypothesis is *augmented* (not replaced) with real Bengali words
+phonetically near it, drawn from the OpenSLR SLR53 corpus's own word list
+(the transcript TSV already in use, not an external dictionary) — see
+`correction/pronunciation_engine.py` docstring for the exact mechanism and its
+honest scope limit (a word never appearing in that corpus cannot be produced).
+
+**Results:**
+
+| Condition | n | correct | accuracy | avg latency | (baseline avg latency) |
+|---|---|---|---|---|---|
+| slow | 29 | 2 | 0.069 | 10809.9 ms | 8398 ms |
+| syllable | 27 | 0 | 0.000 | 12253.3 ms | 9225 ms |
+
+**Honest interpretation — this is a small, real effect, not a fix:** slow
+correction went from 1/29 to 2/29 correct. On a sample this small (n=29) a
+1-attempt difference is not a statistically meaningful improvement — it could
+easily be noise, and was not tested for significance. Syllable-level
+correction **did not improve at all** — still 0/27 — so lexicon augmentation
+did **not** rescue the syllable condition, which remains the project's real
+negative finding: this eval design still cannot demonstrate a benefit from
+syllable-by-syllable re-pronunciation over whole-word slow re-pronunciation.
+Manual inspection of the two newly-correct slow-condition cases (both real):
+ground truth "মাহি" (Whisper's wrong word "মাহে") → predicted "মাহি" (3
+candidates); ground truth "ভঙ্গিতে" (wrong "বংগিতে") → predicted "ভঙ্গিতে"
+(11 candidates — the multi-candidate count here is a direct, visible sign
+lexicon augmentation actually contributed candidates that raw Whisper
+re-transcription alone was not producing before). Latency also genuinely
+increased ~29-33% over the baseline (a real cost of doing the extra lexicon
+lookup/re-ranking work), which matters for spec section 38's "optimize
+expensive operations" — noted as an open cost/benefit tradeoff, not resolved
+in this project's favor by this result.
+
+**A real performance bug was found and fixed during this re-run, not before
+it — flagged for research-integrity honesty:** the first attempt at this
+re-run took over 1h45m (vs. ~8-9 min originally) and was killed as
+unreasonably slow, not because the design was wrong but because
+`phonetics/espeak_g2p.to_phonemes()` spawned an *uncached* `espeak-ng`
+subprocess on every call, and the lexicon shortlist could fan that out to
+hundreds of calls for a single garbage multi-word hypothesis (the syllable
+condition's known failure mode, see above). Fixed with an `lru_cache` on
+`to_phonemes()` and a cap (25) on how many edit-distance-shortlisted
+candidates get phonetically re-ranked (`phonetics/lexicon.py`) — verified with
+a bounded 5-sample smoke run (`run_correction_eval.py --max-samples 5`, a new
+flag added for exactly this purpose) before re-running the full split. The
+numbers above are from the *fixed* code.
+
+**Reproduce:** identical command to the original run above; the lexicon
+augmentation is on by default (`CORRECTION_LEXICON_CONSTRAINT_ENABLED=true`)
+and can be disabled via that env var to reproduce the original unaugmented
+numbers with the current code. Detailed per-attempt results:
+`data/processed/correction_eval_lexicon_augmented_per_sample.json`
+(gitignored, regenerable).
 
 ### Experiment D (meaning/context, Mode B) — not run
 
@@ -238,6 +298,12 @@ Experiment E (hybrid ranking) and a real (non-proxy) re-run of B/C/D — all
 blocked on real correction-attempt data from actual user interactions via the
 frontend, which still has not been manually tested end-to-end in a browser
 (see `PROGRESS.md`). The candidate-generation lexicon-constraint idea flagged
-above under Experiments B/C should be evaluated before re-running those, since
-the current negative result may reflect that gap rather than the underlying
-hypothesis.
+above under Experiments B/C **has now been evaluated (2026-09-07/08, see
+"Experiments B/C re-run" above)** — it produced a small, not statistically
+meaningful improvement on the slow condition (1→2 of 29) and no improvement
+on syllable (still 0/27), so the TTS-proxy limitation and/or the underlying
+gTTS-synthesized-syllable acoustic-artifact problem remain the more likely
+explanations for the syllable condition's poor result, not solely the
+candidate-generation gap. Real (non-proxy) data is still the next thing that
+would actually move this forward, not further candidate-generation tuning on
+synthetic data.
