@@ -8,6 +8,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # Python
+.venv/
 ml-service/venv/
 ml-service/__pycache__/
 **/__pycache__/
@@ -15,6 +16,7 @@ ml-service/__pycache__/
 .pytest_cache/
 *.egg-info/
 ml-service/.cache/
+uv-cache/
 
 # ZenML local repo metadata / SQLite store
 .zen/

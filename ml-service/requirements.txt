@@ -1,3 +1,9 @@
+# SUPERSEDED as of 2026-09-07: the project now uses `uv` for Python dependency
+# management — the root-level ../pyproject.toml + ../uv.lock is the source of
+# truth (see GPU_SETUP.md). Kept here only as a plain-text reference of the
+# same pinned versions during the transition; do NOT `pip install -r` this
+# into a new environment — use `uv sync` from the repo root instead.
+#
 # PyTorch is installed separately with the CUDA-specific index:
 #   pip install torch --index-url https://download.pytorch.org/whl/cu121
 # (see README / GPU_SETUP.md). Not listed here to avoid pip resolving a CPU-only

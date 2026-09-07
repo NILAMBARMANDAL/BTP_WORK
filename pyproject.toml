@@ -1,0 +1,61 @@
+[project]
+name = "btp-work"
+version = "0.1.0"
+description = "Interactive Bengali ASR Error Correction — BTP (ml-service, pipelines, dataset scripts)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  # See README.md / GPU_SETUP.md: system Python is 3.14, too new for stable
+  # PyTorch/faster-whisper wheels — this project targets 3.12 specifically.
+  "fastapi==0.138.2",
+  "uvicorn[standard]==0.32.1",
+  "python-multipart==0.0.20",
+  "pydantic==2.12.5",
+  "pydantic-settings==2.7.0",
+
+  "faster-whisper==1.1.0",
+  "imageio-ffmpeg==0.5.1",
+  "soundfile==0.12.1",
+  "librosa==0.10.2.post1",
+  "numpy==1.26.4",
+
+  "indic-transliteration==2.3.61",
+  "python-Levenshtein==0.26.1",
+
+  "jiwer==3.0.5",
+  "remotezip==0.12.1",
+  "mlflow==2.19.0",
+  "sentence-transformers==6.0.1",
+  "zenml[server]==0.96.4",
+
+  # Needed only for the Windows cuBLAS/cuDNN DLL workaround in
+  # ml-service/api/main.py (CTranslate2 doesn't ship these on Windows) — a
+  # no-op import path on Linux (CI, and the institute GPU server if Linux).
+  # CUDA build via the [[tool.uv.index]] below; CPU wheel elsewhere.
+  "torch==2.5.1+cu121; sys_platform == 'win32'",
+  "torch==2.5.1; sys_platform != 'win32'",
+
+  # In main deps (not dev-only) to mirror the pre-uv requirements.txt exactly.
+  "pytest==8.3.4",
+  "httpx==0.28.1",
+]
+
+[dependency-groups]
+dev = [
+  # Used only to (re)generate synthetic Bengali speech fixtures
+  # (ml-service/scripts/generate_fixtures.py) — mirrors the pre-uv
+  # requirements-dev.txt's one addition over requirements.txt.
+  "gTTS==2.5.4",
+]
+
+[tool.uv]
+package = false
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cu121", marker = "sys_platform == 'win32'" },
+]

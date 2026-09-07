@@ -156,9 +156,11 @@ unavailable on Windows ("Daemon functionality is currently not supported on
 Windows"), so runs execute synchronously in-process — sufficient at this
 project's scale.
 
-Run the real (non-smoke) pipeline with `python -m pipelines.evaluation_pipeline`
+Run the real (non-smoke) pipeline with `uv run python -m pipelines.evaluation_pipeline`
 (defaults match the official 200-sample/seed-42 configuration already used for
-the standalone scripts).
+the standalone scripts). As of 2026-09-07 the project uses `uv` for Python
+dependency/environment management (root `pyproject.toml`/`uv.lock`) instead of
+a manually-managed `venv` + `requirements.txt` — see `GPU_SETUP.md`.
 
 ## Deployment
 

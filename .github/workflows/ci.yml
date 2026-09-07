@@ -24,29 +24,30 @@ jobs:
 
   ml-service:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ml-service
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v4
         with:
-          python-version: "3.12"
-      # faster-whisper (CTranslate2) doesn't require torch, so CI doesn't
-      # install it — torch is only needed for the Windows cuBLAS/cuDNN DLL
-      # workaround in api/main.py, which is a no-op on Linux CI runners.
+          version: "0.10.10"
+          enable-cache: true
+      # faster-whisper (CTranslate2) doesn't require torch at runtime for
+      # inference, but pyproject.toml declares it unconditionally (needed for
+      # the Windows cuBLAS/cuDNN DLL workaround in api/main.py, a no-op import
+      # on Linux) — the CPU wheel resolves here since sys_platform != 'win32'
+      # on the CI runner, not the multi-GB CUDA build.
       - run: sudo apt-get update && sudo apt-get install -y espeak-ng
-      - run: pip install -r requirements.txt
+      - run: uv sync --locked
       # Tests marked @pytest.mark.model load and run real Whisper inference —
       # slow, and (per GPU_SETUP.md) our default model is large-v3, too slow
       # to download+run on a CI CPU runner on every push. They're skipped
-      # here and must be run locally (`pytest tests/ -v`, no -m filter) before
-      # relying on them — CI intentionally does NOT claim to cover that path.
-      - run: python -m pytest tests/ -v -m "not model"
+      # here and must be run locally (`uv run pytest tests/ -v`, no -m
+      # filter) before relying on them — CI intentionally does NOT claim to
+      # cover that path.
+      - run: uv run --directory ml-service python -m pytest tests/ -v -m "not model"
       # Cheap smoke check that the ZenML pipeline definition + steps at least
       # import and construct cleanly (not a real pipeline run — that needs a
       # real Whisper model + real audio, out of scope for a CPU CI runner).
-      - run: cd .. && python -c "from pipelines.evaluation_pipeline import bengali_asr_evaluation_pipeline"
+      - run: uv run python -c "from pipelines.evaluation_pipeline import bengali_asr_evaluation_pipeline"
 
   frontend:
     runs-on: ubuntu-latest

@@ -1,3 +1,8 @@
+# SUPERSEDED as of 2026-09-07 — see requirements.txt's header and
+# GPU_SETUP.md: use `uv sync` (installs the [dependency-groups.dev] group
+# from ../pyproject.toml, which includes gTTS below) instead of
+# `pip install -r requirements-dev.txt`.
+#
 # Dev-only tools, not needed to run the service itself.
 -r requirements.txt
 
