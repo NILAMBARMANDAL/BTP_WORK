@@ -80,8 +80,21 @@ apply unchanged.
 
 ### 4. Bengali.AI / OOD-Speech
 - **Source:** https://bengaliai.github.io/asr, arXiv:2305.09688
-- **License:** Not confirmed from research so far — **must be checked before
-  any use**, not assumed permissive.
+- **License:** Still **not confirmed** (re-checked 2026-09-07, not just carried
+  over from before). The project page and arXiv abstract/metadata state no
+  explicit dataset license. Its two actual distribution channels are Mozilla
+  Common Voice (for a related but not necessarily identical release) and two
+  Kaggle competitions (`kaggle.com/competitions/bengaliai-speech`,
+  `bengaliai-cv19`) — Kaggle's own Rules/Data tabs are gated behind a Kaggle
+  account login and JS rendering that this session's web-fetch tooling cannot
+  access, so the actual license text could not be retrieved, not just "wasn't
+  found by searching." Kaggle competition datasets commonly restrict use to
+  the competition itself (no redistribution / no use outside the competition)
+  — that is a general pattern, not a confirmed fact about this specific
+  dataset, and must not be treated as either permission or prohibition.
+  **Must be checked before any use** by someone with a Kaggle account opening
+  the Data/Rules tab directly, or the user must explicitly accept the risk —
+  this is not something to resolve unilaterally.
 - **Size:** ~1177.94 hours training (22,645 speakers) + 23.03 hours
   manually-annotated out-of-distribution test set (TV drama, audiobook, talk
   show, online class, religious sermons — 17 sources)

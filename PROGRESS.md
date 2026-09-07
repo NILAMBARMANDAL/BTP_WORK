@@ -1,6 +1,6 @@
 # Progress
 
-_Last updated: 2026-09-06. This file must always reflect actual repository
+_Last updated: 2026-09-08. This file must always reflect actual repository
 state — verify against `git log` / `git status` / the filesystem before
 trusting it in a future session._
 
@@ -13,15 +13,76 @@ results.** Phonetic scoring uses espeak-ng (real G2P); semantic scoring
 (Mode B) uses real LaBSE sentence embeddings. The OpenSLR 200-sample pool is
 now split speaker-disjointly into train/val/test (`scripts/split_dataset.py`),
 and Experiments B/C (slow vs. syllable-level correction) have a real, if
-TTS-proxy-limited and small-sample, result: **both accuracies are very low
-(3.4% slow, 0% syllable), and syllable-level underperformed whole-word slow
-re-pronunciation** — see `EXPERIMENTS.md` for the full result and the
-candidate-generation limitation (no lexicon constraint) that most plausibly
-explains it. Remaining major gaps: real correction-attempt data from an
-actual live user session (frontend still not manually browser-tested),
-Experiment D (meaning/context — deliberately not proxy-synthesized, see
-`EXPERIMENTS.md`), CI hardening for the new deps, Docker build verification,
-and institute/cloud GPU access — see below.
+TTS-proxy-limited and small-sample, result, **now re-run with lexicon-
+augmented candidate generation (2026-09-07/08, see below and
+`EXPERIMENTS.md`): 6.9% slow / 0% syllable** (up from the original 3.4%/0% —
+a 1-sample, not statistically meaningful change on the slow condition, and no
+change at all on syllable). **Syllable-level still underperforms whole-word
+slow re-pronunciation** — see `EXPERIMENTS.md` for the full result. Remaining
+major gaps: real correction-attempt data from an actual live user session
+(frontend still not manually browser-tested — no browser automation tool is
+connected in this environment, confirmed again 2026-09-07), Experiment D
+(meaning/context — deliberately not proxy-synthesized, see `EXPERIMENTS.md`),
+Docker build verification, and institute GPU access — still blocked on
+connection details only the user can provide, see below.
+
+## 2026-09-07/08 session
+
+- **Python dependency management migrated to `uv`** (root `pyproject.toml` +
+  `uv.lock` replace the previous `ml-service/venv` + `requirements.txt` /
+  `requirements-dev.txt`, which are kept only as a superseded reference during
+  transition, clearly marked as such). One environment now covers both
+  `ml-service/` and the repo-root `pipelines/`/`scripts/`, matching how those
+  were already invoked. Verified, not just installed: `torch.cuda.is_available()`
+  → `True` (real GTX 1650 detected) and the full test suite (32 tests, incl.
+  the 5 real-GPU-inference/real-embedding `@pytest.mark.model` tests) passes
+  under the new environment. CI (`.github/workflows/ci.yml`) updated to use
+  `astral-sh/setup-uv` + `uv sync --locked` instead of `pip install -r
+  requirements.txt` — not yet verified against a real GitHub Actions run (that
+  needs an actual push, see Git status below).
+- **GitHub SSH checked, not usable from this network**: `ssh -T git@github.com`
+  timed out on port 22 (common firewall behavior) — moot anyway since the
+  existing `origin` remote is HTTPS and already has working push access from a
+  prior session; left as-is rather than switching to a transport that just
+  failed.
+- **Institute GPU: still blocked, unchanged.** An instruction this session
+  asserted an institute L40 server was available with "SSH access: confirmed"
+  and gave specs, but no hostname/IP, port, username, or auth method has
+  actually appeared anywhere in this conversation or repo, and this session's
+  shell tools only execute on the local dev machine (no SSH client tool call
+  available). Nothing was inspected or deployed there — see `GPU_SETUP.md`
+  "Institute GPU" for the exact blocker and what's needed to unblock it.
+- **Lexicon-augmented candidate generation implemented**
+  (`ml-service/phonetics/lexicon.py`) — real Bengali words phonetically near
+  each raw Whisper hypothesis, drawn from the OpenSLR SLR53 corpus's own word
+  list, augment (not replace) the candidate pool. This was the
+  candidate-generation improvement `EXPERIMENTS.md` flagged as the most
+  plausible fix for the syllable condition's poor Experiment B/C result.
+  Re-running the exact same eval on the exact same split gave a real, honest
+  result: **a small (1-sample, not significant) improvement on slow, no
+  improvement on syllable** — see `EXPERIMENTS.md` "Experiments B/C re-run".
+  This does not validate the hypothesis that lexicon constraint was the main
+  problem; the TTS-proxy limitation remains the more likely explanation.
+- **A real performance bug was found and fixed mid-session, flagged for
+  transparency rather than hidden:** the first re-run attempt ran for over
+  1h45m (vs. ~8-9 min originally) before being killed as unreasonably slow —
+  diagnosed as ~90% wall-clock time spent waiting on an *uncached*
+  `espeak-ng` subprocess spawn per phonetic-similarity call, fanned out by an
+  unbounded lexicon shortlist on garbage multi-word hypotheses. Fixed
+  (`lru_cache` on `espeak_g2p.to_phonemes()`, a 25-candidate cap before
+  phonetic re-ranking in `lexicon.py`), verified with a new bounded
+  `--max-samples` flag on `run_correction_eval.py` before re-running the full
+  split. Latency is still genuinely ~29-33% higher than the pre-lexicon
+  baseline even after the fix — a real, unresolved cost/benefit tradeoff, not
+  claimed as free.
+- **Bengali.AI OOD-Speech license investigated further, still unresolved**:
+  its actual distribution channels (Kaggle competitions, gated behind
+  login+JS this session's tooling can't access) could not be checked for
+  their real license text — documented honestly in `DATA_PIPELINE.md` rather
+  than guessed at.
+- Re-verified the already-claimed-live Vercel/Render production deployments
+  right now (not trusting the older doc claim): both still return healthy
+  responses.
 
 ## Production deployment (2026-09-06/07) — REAL, verified live
 
@@ -161,9 +222,9 @@ GPU hosting becomes available.
 - Ground-truth capture (`Correction.groundTruthWord`, `Session.datasetProvenance`) and the `compute_correction_accuracy` metric now exist in the schema/evaluation code. A first correction-method comparison now exists (Experiments B/C, see above), but it used a gTTS-synthesized proxy for re-pronunciation audio, not real live-user data — the frontend still has not been manually tested end-to-end in a browser by any session, and the low/negative result should be re-checked against real user audio before treating it as validated.
 - Production deployment is unimplemented: no Vercel deploy, no hosted backend, no institute GPU access confirmed reachable. This needs the user to provide GitHub/Vercel authentication and institute GPU/network access before it can proceed — see spec section 41's list of things only the user can provide.
 
-## Test status (as of this writing, all verified locally)
+## Test status (as of this writing, all verified locally, 2026-09-08 under `uv`)
 
-- ml-service: `pytest tests/ -v` → 28 passed (5 marked `@pytest.mark.model`, includes real GPU Whisper inference and real LaBSE embedding inference)
+- ml-service: `uv run --directory ml-service python -m pytest tests/ -v` → 32 passed (5 marked `@pytest.mark.model`, includes real GPU Whisper inference and real LaBSE embedding inference) — up from 28 (added `tests/test_lexicon.py`, 4 tests)
 - backend: `npm test` → 5 passed (Jest + mongodb-memory-server)
 - frontend: `npm run build` → succeeds; `npm run lint` → clean
 
@@ -204,12 +265,14 @@ audio) — not yet validated against real human re-pronunciation.
    backend API driven by a harness against `POST /api/sessions` →
    `/corrections` → `/corrections/:id/attempts` is still needed to validate
    (or overturn) the proxy result and to unblock a non-proxy Experiment B/C/E.
-3. Investigate constraining correction candidates to a real Bengali lexicon
-   near the original wrong word, rather than accepting Whisper's raw
-   unconstrained re-transcription of the correction clip — flagged in
-   `EXPERIMENTS.md` as the most plausible cause of the syllable-condition's
-   very low accuracy (multi-word garbage output on concatenated-syllable
-   clips), not yet implemented.
+3. **Done (2026-09-07/08):** lexicon-augmented candidate generation
+   (`ml-service/phonetics/lexicon.py`) implemented and the eval re-run — see
+   `EXPERIMENTS.md` "Experiments B/C re-run". Result: small, not statistically
+   meaningful improvement on slow (1→2/29), no improvement on syllable
+   (still 0/27) — this does not resolve the syllable condition's poor result;
+   the TTS-proxy limitation remains the more likely explanation, and real
+   (non-proxy) user data is the next thing that would actually clarify this,
+   not further candidate-generation tuning on synthetic audio.
 4. Experiment D (meaning/context, Mode B) — deliberately not run with a
    synthetic proxy (see `EXPERIMENTS.md`); needs either real user context or
    an explicit, user-approved synthesis method.
@@ -223,9 +286,10 @@ audio) — not yet validated against real human re-pronunciation.
    split -> baseline eval -> error analysis -> correction eval as real,
    config-driven steps — verified end-to-end with a small (`--smoke`,
    8-sample) real run; see `ARCHITECTURE.md` "Pipeline orchestration".
-8. Production deployment: GitHub push access was confirmed working this
-   session (a cached credential, not something set up by any prior session)
-   and the user approved pushing + attempting a real Vercel frontend deploy —
-   in progress this session, see below. Institute GPU reachability and a
-   hosted backend remain unresolved; the user chose not to pursue institute
-   GPU access this session.
+8. Production deployment: frontend (Vercel) and backend (Render) are live and
+   re-verified as of 2026-09-08 (see below). Institute GPU reachability
+   remains unresolved as of 2026-09-08 — not by choice this time, but because
+   no connection details (hostname/IP, username, auth method) for the
+   institute server have been provided in any session; see `GPU_SETUP.md`
+   "Institute GPU" for exactly what's needed. This is still the single
+   missing link for full end-to-end production functionality.
