@@ -89,27 +89,56 @@ has not been tested and may need a request queue or a second, smaller model
 dedicated to word-level correction. Flagging as a design question for later,
 not solved yet.
 
-## Institute GPU (pending — blocked on connection details, 2026-09-07)
+## Institute GPU (blocked on SSH authentication, 2026-09-08 — updated from the 2026-09-07 "no connection details" blocker)
 
-An instruction set this session described an institute server (NVIDIA L40,
-~49GB VRAM, driver 610.88, CUDA 13.3, Python 3.14.7, no PyTorch/Docker
-installed, "SSH access: confirmed") and asked for it to be inspected and
-configured directly. **This has not been done and could not be started**: no
-hostname/IP, port, username, or authentication method (key path or
-interactive password) for that machine has actually appeared anywhere in this
-conversation or repo. This session's shell tools (Bash/PowerShell) execute on
-the local dev machine only — there is no SSH client tool call available, and
-without an address there is nothing to connect to. **The GPU specs above are
-therefore unverified by this session** — they are only what was asserted in
-the instructions, not the output of an actual `nvidia-smi`/inspection run
-against that machine, and must not be cited as a real, inspected result until
-they are.
+**Update 2026-09-08:** connection details were provided this session (SSH
+alias `kgp-140` -> `10.171.14.130`, user `shambo`) and an actual connection
+was attempted from this local machine. **Result: authentication failed —
+this is now a real, verified blocker, not a missing-information one.**
 
-What's needed to unblock this (see PROGRESS.md/README's escalation policy):
-hostname or IP + port, username, and either an SSH private key path or
-confirmation that an interactive password prompt (`ssh user@host`, prompted
-live) is how to authenticate — plus whether a VPN/jump host is required to
-reach it from outside the institute network.
+Exact evidence (`ssh -v -o BatchMode=yes -i ~/.ssh/id_ed25519 kgp-140`):
+```
+debug1: Authenticating to 10.171.14.130:22 as 'shambo'
+...
+debug1: Authentications that can continue: password,keyboard-interactive
+debug1: No more authentication methods to try.
+shambo@10.171.14.130: Permission denied (password,keyboard-interactive).
+```
+Critically, **`publickey` never appears in the server's offered-methods
+list** — the remote sshd is not accepting public-key authentication for this
+account at all (only password/keyboard-interactive), so no local private key
+could ever succeed here regardless of which one is used. This was checked
+against the only keypair present on this dev machine
+(`~/.ssh/id_ed25519`, pre-dating this project — comment `mandalnilambar678@gmail.com`,
+created 2026-07-21); it parses fine and has no passphrase
+(`ssh-keygen -y` succeeds with `-P ""`), so the failure is not a bad/corrupt
+key — no key was ever going to be offered a chance.
+
+**This is a genuinely external blocker per the operating instructions' own
+escalation rule — not something this session can fix from here.** One of the
+following, from the user/institute side, is required to unblock it:
+1. The institute server's admin (or the user, if `shambo` already has
+   filesystem access via another route) adds this machine's public key —
+   `~/.ssh/id_ed25519.pub` — to `~/.ssh/authorized_keys` for user `shambo`
+   on the server, **and** confirms/enables `PubkeyAuthentication yes` in
+   that server's `sshd_config` if it's currently restricted; or
+2. The user supplies the actual login password and runs the interactive
+   login themselves (this session's shell tools have no TTY/stdin — they
+   cannot answer an interactive password or keyboard-interactive/OTP
+   prompt; see tool constraints), then reports back whether the shell
+   session that results has passwordless `sudo`/write access needed for
+   later install steps; or
+3. A separate, already-authorized deploy mechanism (e.g. a jump host, VPN
+   client config, or institute VPN requirement) exists that this session
+   doesn't know about — if so, the exact steps/credentials for it are
+   needed.
+
+None of steps 2-9 in the requested deployment plan (uv setup, PyTorch/GPU
+verification, FastAPI deployment, Render connectivity) could be attempted,
+inspected, or fabricated as a result — there is no shell access to the
+remote machine. The GPU specs quoted in earlier instructions (NVIDIA L40,
+~49GB VRAM) remain **unverified by any session** until a real `nvidia-smi`
+run succeeds over an authenticated connection.
 
 Once reachable, the plan (unchanged from before): inspect for real (GPU
 model, driver, CUDA, disk space, Docker/WSL2 availability, existing Python) —

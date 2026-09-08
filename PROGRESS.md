@@ -215,12 +215,12 @@ GPU hosting becomes available.
 ## Known issues / open questions for the user
 
 - **Dataset licensing:** proceeded with OpenSLR SLR53 (CC-BY-SA-4.0, a clear share-alike license appropriate for academic thesis use with attribution) for Stage 1 baseline work — this is a defensible research/eval use, not redistribution, but flag it explicitly: if results or derived data are published, CC-BY-SA-4.0's share-alike/attribution terms apply. Bengali.AI OOD-Speech's license is still unresolved and has not been used.
-- Institute GPU access not yet available — GPU_SETUP.md's institute-server benchmarking is blocked until then. The baseline eval above ran on the local dev 4GB GTX 1650, not institute hardware.
+- Institute GPU access is blocked on SSH authentication (verified 2026-09-08, not just "not yet available") — the server only accepts password/keyboard-interactive login, never publickey, for user `shambo`; see `GPU_SETUP.md` "Institute GPU" for the exact evidence and what the institute/user needs to do. The baseline eval above ran on the local dev 4GB GTX 1650, not institute hardware.
 - Production MongoDB hosting (self-hosted on institute server vs. managed service) not yet decided.
 - Docker Desktop not installed locally — containers are written but unverified. If you'd like me to proceed with a Docker Desktop install, that needs admin rights I don't have in this environment; you'd need to install it, or grant admin access.
 - Contextual (language-model fluency) scoring is entirely unimplemented (`contextual_score` always 0.0) — this is genuinely future work, not started.
 - Ground-truth capture (`Correction.groundTruthWord`, `Session.datasetProvenance`) and the `compute_correction_accuracy` metric now exist in the schema/evaluation code. A first correction-method comparison now exists (Experiments B/C, see above), but it used a gTTS-synthesized proxy for re-pronunciation audio, not real live-user data — the frontend still has not been manually tested end-to-end in a browser by any session, and the low/negative result should be re-checked against real user audio before treating it as validated.
-- Production deployment is unimplemented: no Vercel deploy, no hosted backend, no institute GPU access confirmed reachable. This needs the user to provide GitHub/Vercel authentication and institute GPU/network access before it can proceed — see spec section 41's list of things only the user can provide.
+- Production deployment: frontend (Vercel) and backend (Render) are live (see "Current phase" above); the ml-service/GPU leg is what's unimplemented, blocked on institute SSH auth as described above. This needs the institute server admin (or the user) to authorize this machine's public key, or the user to complete an interactive password login themselves, before it can proceed.
 
 ## Test status (as of this writing, all verified locally, 2026-09-08 under `uv`)
 
@@ -288,8 +288,13 @@ audio) — not yet validated against real human re-pronunciation.
    8-sample) real run; see `ARCHITECTURE.md` "Pipeline orchestration".
 8. Production deployment: frontend (Vercel) and backend (Render) are live and
    re-verified as of 2026-09-08 (see below). Institute GPU reachability
-   remains unresolved as of 2026-09-08 — not by choice this time, but because
-   no connection details (hostname/IP, username, auth method) for the
-   institute server have been provided in any session; see `GPU_SETUP.md`
-   "Institute GPU" for exactly what's needed. This is still the single
-   missing link for full end-to-end production functionality.
+   was attempted for real later on 2026-09-08 with actual connection details
+   (`kgp-140` / `10.171.14.130` / user `shambo`) and **failed authentication**
+   — the server only offers `password,keyboard-interactive`, never
+   `publickey`, so no local SSH key can succeed there until the institute
+   server's admin adds this machine's public key to `authorized_keys` and/or
+   enables pubkey auth, or the user completes an interactive password login
+   themselves (this session's tools have no TTY to do that). See
+   `GPU_SETUP.md` "Institute GPU" for the exact debug evidence and the three
+   concrete unblock options. This is still the single missing link for full
+   end-to-end production functionality — genuinely blocked, not skipped.
