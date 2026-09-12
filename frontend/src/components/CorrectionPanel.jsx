@@ -1,13 +1,26 @@
 import { useState } from "react";
 import { Recorder } from "./Recorder.jsx";
 
+const MODE_LABELS = {
+  pronunciation_only: "Pronunciation Only",
+  pronunciation_meaning: "Pronunciation + Meaning/Context",
+};
+
 /**
- * UI for correcting one flagged word. Presentation only — all API calls and
- * state transitions live in useCorrection (ARCHITECTURE.md: keep UI
- * components separate from API communication).
+ * UI for correcting one flagged word, for a mode that was already chosen
+ * (and sent to the backend) before this panel ever rendered — see App.jsx's
+ * mode-choice step. `mode` is a prop, not local state: the backend's
+ * Correction document fixes the mode at creation
+ * (backend/src/routes/corrections.js), and every attempt against it reuses
+ * that same mode (correction.mode) server-side — choosing a mode here after
+ * the fact would have no effect on what the ml-service actually does, which
+ * is exactly the contract mismatch this was fixed to avoid.
+ *
+ * Presentation only — all API calls and state transitions live in
+ * useCorrection (ARCHITECTURE.md: keep UI components separate from API
+ * communication).
  */
-export function CorrectionPanel({ word, correction, attempts, status, error, onSubmitAttempt, onAccept, onClose }) {
-  const [mode, setMode] = useState("pronunciation_only");
+export function CorrectionPanel({ word, mode, correction, attempts, status, error, onSubmitAttempt, onAccept, onClose }) {
   const [pronunciationStyle, setPronunciationStyle] = useState("slow");
   const [meaningContext, setMeaningContext] = useState("");
 
@@ -27,32 +40,12 @@ export function CorrectionPanel({ word, correction, attempts, status, error, onS
         <button onClick={onClose}>Close</button>
       </div>
 
+      <p className="correction-panel__mode">
+        Mode: <strong>{MODE_LABELS[mode] ?? mode}</strong>
+      </p>
+
       {!isAccepted && (
         <>
-          <fieldset className="mode-select">
-            <legend>Correction mode</legend>
-            <label>
-              <input
-                type="radio"
-                name="mode"
-                value="pronunciation_only"
-                checked={mode === "pronunciation_only"}
-                onChange={() => setMode("pronunciation_only")}
-              />
-              Pronunciation only
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="mode"
-                value="pronunciation_meaning"
-                checked={mode === "pronunciation_meaning"}
-                onChange={() => setMode("pronunciation_meaning")}
-              />
-              Pronunciation + meaning/context
-            </label>
-          </fieldset>
-
           <fieldset className="style-select">
             <legend>How will you pronounce it?</legend>
             <label>
@@ -77,10 +70,16 @@ export function CorrectionPanel({ word, correction, attempts, status, error, onS
             </label>
           </fieldset>
 
+          <p className="hint">
+            Record <strong>only the word above</strong> — not the whole sentence. Speak slowly and
+            clearly{pronunciationStyle === "syllable" ? ", syllable by syllable" : ""}.
+          </p>
+
           {mode === "pronunciation_meaning" && (
             <div className="meaning-input">
               <label htmlFor="meaning-context">
-                Optional: describe what the word means, or use it in a sentence
+                Optional: describe what the word means, or use it in a sentence. You can change
+                this between retries.
               </label>
               <textarea
                 id="meaning-context"
@@ -96,8 +95,8 @@ export function CorrectionPanel({ word, correction, attempts, status, error, onS
         </>
       )}
 
-      {isBusy && <p className="hint">Working…</p>}
-      {error && <p className="error-banner">{error}</p>}
+      {isBusy && <p className="hint" role="status">Working…</p>}
+      {error && <p className="error-banner" role="alert">{error}</p>}
 
       {attempts.length > 0 && (
         <div className="attempt-history">
@@ -123,13 +122,16 @@ export function CorrectionPanel({ word, correction, attempts, status, error, onS
                   </details>
                 )}
                 {!isAccepted && (
-                  <button onClick={() => onAccept(a._id)} disabled={isBusy}>
+                  <button onClick={() => onAccept(a._id)} disabled={isBusy} aria-label={`Accept prediction ${a.prediction}`}>
                     Accept this prediction
                   </button>
                 )}
               </li>
             ))}
           </ol>
+          {!isAccepted && attempts.length > 0 && (
+            <p className="hint">Not right? Record the word again above to retry.</p>
+          )}
         </div>
       )}
 

@@ -34,15 +34,25 @@ function App() {
     }
   };
 
-  const handleSelectWord = async (wordIndex) => {
+  const handleSelectWord = (wordIndex) => {
     if (acceptedByIndex[wordIndex]) return; // already corrected & accepted in this session
+    // Don't open the correction yet — the mode must be chosen first (see
+    // handleChooseMode) because the backend fixes a Correction's mode at
+    // creation time and every attempt against it reuses that same mode.
+    // Opening with a hardcoded mode here, then letting the user "choose" a
+    // different one inside the correction panel, would be a UI that does
+    // nothing — the real bug this two-step flow replaces.
     setSelectedWordIndex(wordIndex);
+    correctionWorkflow.close();
+  };
+
+  const handleChooseMode = async (mode) => {
     try {
       await correctionWorkflow.open({
         sessionId: session._id,
         transcriptId: transcript._id,
-        wordIndex,
-        mode: "pronunciation_only",
+        wordIndex: selectedWordIndex,
+        mode,
       });
     } catch {
       // error surfaced via correctionWorkflow.error in the panel
@@ -136,11 +146,31 @@ function App() {
         </section>
       )}
 
+      {selectedWord && !correctionWorkflow.correction && (
+        <section className="correction-section">
+          <h2>
+            3. Choose a correction mode for <span lang="bn">{selectedWord.text}</span>
+          </h2>
+          <div className="mode-choice">
+            <button onClick={() => handleChooseMode("pronunciation_only")} disabled={correctionWorkflow.status === "opening"}>
+              Pronunciation Only
+            </button>
+            <button onClick={() => handleChooseMode("pronunciation_meaning")} disabled={correctionWorkflow.status === "opening"}>
+              Pronunciation + Meaning/Context
+            </button>
+            <button onClick={handleCloseCorrection}>Cancel</button>
+          </div>
+          {correctionWorkflow.status === "opening" && <p className="hint" role="status">Opening correction…</p>}
+          {correctionWorkflow.error && <p className="error-banner" role="alert">{correctionWorkflow.error}</p>}
+        </section>
+      )}
+
       {selectedWord && correctionWorkflow.correction && (
         <section className="correction-section">
-          <h2>3. Correct the selected word</h2>
+          <h2>4. Correct the selected word</h2>
           <CorrectionPanel
             word={selectedWord}
+            mode={correctionWorkflow.correction.mode}
             correction={correctionWorkflow.correction}
             attempts={correctionWorkflow.attempts}
             status={correctionWorkflow.status}

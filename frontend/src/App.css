@@ -102,6 +102,17 @@ section {
   align-items: center;
 }
 
+.correction-panel__mode {
+  color: var(--text);
+  margin-top: 0;
+}
+
+.mode-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 fieldset {
   border: 1px solid var(--border);
   border-radius: 6px;
