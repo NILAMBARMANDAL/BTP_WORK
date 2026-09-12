@@ -1,20 +1,24 @@
-# Render Blueprint for the Node/Express backend (spec section 29: "backend
-# must be deployable and reachable by the Vercel frontend"). ml-service is
-# NOT deployed here — it needs a persistent GPU, which Render's free/starter
-# web-service plans don't provide, and the user chose to keep ml-service
-# local-only for now rather than pay for cloud GPU hosting or use unavailable
-# institute GPU access (see PROGRESS.md).
+# Render Blueprint for both deployable services (spec section 14/29):
+# - btp-backend: Node/Express, reachable by the Vercel frontend.
+# - btp-ml-service: FastAPI/Whisper, reachable only by btp-backend (never by
+#   the browser directly — see ARCHITECTURE.md).
 #
 # Deploy: Render dashboard -> New -> Blueprint -> select this repo. Render
-# reads this file and creates the service below; you'll be prompted to fill
-# in the `sync: false` env vars (MONGO_URI, ML_SERVICE_URL) since those are
-# either secret or not yet known.
+# reads this file and creates both services; you'll be prompted to fill in
+# the `sync: false` env vars (secrets, or values only known after the other
+# service exists) since Render Blueprints can't safely auto-fill those.
 #
-# KNOWN LIMITATION, stated plainly: Render's free/starter web-service disk is
-# ephemeral (wiped on redeploy/restart). AUDIO_STORAGE_DIR here is local
-# filesystem, matching current dev behavior — fine for a demo, but per spec
-# section 15 real production audio storage should move to object storage
-# (e.g. S3) before this is relied on for anything users need to persist.
+# COST NOTE (a billing decision only the account owner can make, not
+# something this repo should decide for you): btp-ml-service's `plan` below
+# is intentionally left at Render's cheapest paid tier ("starter", ~512MB
+# RAM) to avoid silently committing you to a larger spend. Whisper `small` +
+# PyTorch + sentence-transformers/LaBSE may not reliably fit in 512MB — if
+# the service fails its health check or crashes under real load, upgrade
+# `plan` to `standard` (2GB) and/or raise WHISPER_MODEL_SIZE's accuracy
+# tradeoff down to `base`, per GPU_SETUP.md "Model size findings" and
+# ARCHITECTURE.md "Render ML service". This has NOT been verified against a
+# live Render instance in this session (no Render API key / CLI auth was
+# available) — verify for real after deploying, don't trust this comment.
 services:
   - type: web
     name: btp-backend
@@ -31,9 +35,71 @@ services:
         value: uri
       - key: MONGO_URI
         sync: false
+      # Set this to btp-ml-service's Render URL (e.g.
+      # https://btp-ml-service.onrender.com) once it's deployed below. Kept
+      # as sync:false (not a secret, just not knowable until that service
+      # exists) rather than a placeholder that would silently "work" with a
+      # 503 at request time — see services/mlServiceClient.js.
       - key: ML_SERVICE_URL
         sync: false
+      - key: ML_SERVICE_TIMEOUT_MS
+        value: "120000"
       - key: CORS_ORIGIN
         value: https://frontend-three-psi-tz8kxezc8c.vercel.app
       - key: MAX_AUDIO_UPLOAD_MB
         value: "25"
+
+  # KNOWN LIMITATION, stated plainly: Render's free/starter web-service disk
+  # is ephemeral (wiped on redeploy/restart). AUDIO_STORAGE_DIR here is local
+  # filesystem, matching current dev behavior — fine for a demo/prototype,
+  # but per spec section 15/11 real production audio storage should move to
+  # object storage (e.g. S3) before this is relied on for anything users
+  # need to persist long-term. Not blocking for a working demo flow.
+
+  - type: web
+    name: btp-ml-service
+    runtime: docker
+    plan: starter # see COST NOTE above — bump to `standard` if this OOMs
+    dockerfilePath: ./docker/ml-service.render.Dockerfile
+    dockerContext: ./ml-service
+    healthCheckPath: /health
+    envVars:
+      # --- CPU-practical defaults for Render, NOT the research/L40 config ---
+      # The institute-GPU / local-dev default (WHISPER_MODEL_SIZE=large-v3,
+      # WHISPER_DEVICE=cuda) lives in .env.example and is preserved there —
+      # see ARCHITECTURE.md "Render ML service" for why `small` is the
+      # starting point here instead: large-v3 at int8 needs ~3GB+ RAM and a
+      # much longer/heavier build, impractical on Render's cheapest compute.
+      # `small` was observed (GPU_SETUP.md "Model size findings", ONE
+      # smoke-tested sample, not a rigorous benchmark) to sometimes output
+      # wrong-script transliteration for Bengali — re-verify real Bengali
+      # script correctness against this live deployment before trusting it;
+      # if it's wrong, the next config-only (no code change) step up is
+      # WHISPER_MODEL_SIZE=medium on a `standard`-or-larger plan.
+      - key: WHISPER_MODEL_SIZE
+        value: small
+      - key: WHISPER_DEVICE
+        value: cpu
+      - key: WHISPER_COMPUTE_TYPE
+        value: int8
+      - key: WHISPER_LANGUAGE
+        value: bn
+      - key: WHISPER_BEAM_SIZE
+        value: "5"
+      - key: SEMANTIC_DEVICE
+        value: cpu
+      # The OpenSLR lexicon TSV (data/raw/openslr_53/...) is gitignored and
+      # is NOT shipped in this image (spec section 12: no raw dataset in
+      # Git) — lexicon-augmented candidates would silently no-op anyway
+      # (phonetics/lexicon.py's is_available() check), but disabling this
+      # explicitly documents that the Render deployment runs on raw Whisper
+      # re-transcription + LaBSE/phonetic scoring only, not the
+      # lexicon-augmented path used in EXPERIMENTS.md's evaluation runs.
+      - key: CORRECTION_LEXICON_CONSTRAINT_ENABLED
+        value: "false"
+      - key: PREPROC_RESAMPLE
+        value: "true"
+      - key: PREPROC_TARGET_SR
+        value: "16000"
+      - key: PREPROC_MONO
+        value: "true"

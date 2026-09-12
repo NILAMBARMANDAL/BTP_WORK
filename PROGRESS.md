@@ -1,8 +1,108 @@
 # Progress
 
-_Last updated: 2026-09-08. This file must always reflect actual repository
+_Last updated: 2026-09-12. This file must always reflect actual repository
 state — verify against `git log` / `git status` / the filesystem before
 trusting it in a future session._
+
+## 2026-09-12 session — correction-engine bug fix, Render ml-service packaging, hardening
+
+**Goal this session:** move from "frontend+backend live, ml-service not deployed" toward a genuinely working public app. What actually landed (all verified locally — see test runs below; none of this has been deployed to Render/Vercel yet, see "Blocked on credentials" below):
+
+- **Real bug fixed in `ml-service/correction/pronunciation_engine.py`:** the raw Whisper
+  hypothesis for a correction clip was added as a single candidate even when
+  Whisper decoded it into *multiple* tokens (a documented Whisper failure mode
+  on short/isolated-word audio — hallucinated/repeated extra words). If that
+  multi-word hypothesis ranked first, `prediction` came back as a multi-word
+  blob instead of a single corrected word — i.e. exactly the
+  "reproduces-the-whole-sentence" bug the spec called out. Fix: a hypothesis
+  with more than one whitespace-separated token is now decomposed into its
+  individual tokens, each scored independently against the single selected
+  word — the correction unit is always one word. New regression tests:
+  `ml-service/tests/test_correction_engine.py` (5 tests, mocked Whisper call,
+  no GPU needed) plus the existing real-GPU `test_correct_returns_ranked_candidates`
+  re-verified passing after the fix.
+- **ml-service is now packaged for Render (CPU), but NOT deployed** (no Render
+  API key / CLI auth available in this session — see "Blocked on credentials"):
+  - `docker/ml-service.render.Dockerfile` — CPU-only image (`python:3.12-slim`,
+    CPU PyTorch wheel from `download.pytorch.org/whl/cpu` instead of the
+    multi-GB CUDA build, espeak-ng via apt), binds to Render's `$PORT`.
+  - `ml-service/requirements-render.txt` — a deliberately smaller dependency
+    set than `pyproject.toml`/`uv.lock` (drops mlflow/zenml/remotezip/pytest/gTTS
+    — research/dev-only tooling the live web deployment never calls at request
+    time; see ARCHITECTURE.md "Render ML service").
+  - `render.yaml` now defines a second service, `btp-ml-service`, with
+    Render-practical env defaults: `WHISPER_MODEL_SIZE=small`,
+    `WHISPER_DEVICE=cpu`, `WHISPER_COMPUTE_TYPE=int8`, lexicon augmentation
+    disabled (its TSV isn't shipped — gitignored raw data, per spec section 12).
+    **`small` was only ever smoke-tested on ONE sample for Bengali
+    script-correctness (GPU_SETUP.md) — this is NOT verified on a real Render
+    instance yet.** The local-dev/institute-L40 default
+    (`large-v3`/cuda, in `.env.example`/`pyproject.toml`) is untouched.
+  - Backend hardening for a CPU ml-service that may be slow: `ML_SERVICE_TIMEOUT_MS`
+    (default 120000) wired through `mlServiceClient.js` via `AbortSignal.timeout`,
+    surfaced as a distinct 504 (not a generic network error).
+  - Fixed a real bug while reviewing upload validation: unsupported file type
+    and oversized-upload errors were mapping to HTTP 500 instead of 400
+    (`backend/src/middleware/upload.js`, `errorHandler.js`) — client input
+    errors should never log as server errors or return 500. New tests:
+    `backend/tests/uploadValidation.test.js`.
+  - New backend test coverage for gaps spec section 13 called out:
+    `backend/tests/mlServiceClient.test.js` (timeout/unreachable/non-2xx, with
+    `global.fetch` mocked) and `backend/tests/correctionsFlow.test.js` (mode
+    validation, a full attempt→retry→accept→post-accept-409 flow, and a 404 on
+    an attempt id that doesn't belong to the correction — all with
+    `mlServiceClient` mocked via `jest.unstable_mockModule` so they don't need
+    a live ml-service).
+- **Frontend (still not manually browser-tested — no browser automation tool
+  connected this session either, same gap as before):** added a "Start a new
+  recording" reset button (spec section 9: "reset/new utterance
+  functionality" — previously missing), a file-upload fallback alongside the
+  mic recorder, explicit `unsupported`/`empty`-recording states in
+  `useAudioRecorder`, `role="alert"`/`role="status"` + `aria-label`s on the
+  recorder and error/status banners, and a mobile breakpoint in `App.css`.
+  `npm run build` and `npm run lint` both pass clean.
+- **Security housekeeping:** found a leftover plaintext file
+  (`/tmp/render_body.json`, outside this repo, dated 2026-09-07) containing a
+  real MongoDB Atlas username/password from a prior session's Render API call
+  construction. Deleted it. **Recommend rotating that Atlas database user's
+  password** — it sat in world-readable temp storage on this dev machine for
+  several days; rotating costs nothing and removes any residual exposure.
+- **Re-verified the already-live deployments before changing anything**:
+  frontend (Vercel) returned HTTP 200, backend (Render) `/health` returned
+  `{"status":"ok"}` and a DB-roundtrip 404 check passed — both still live, as
+  of 2026-09-12, matching the prior session's claims.
+
+### Blocked on credentials (exact blockers, per spec section 20 — not skipped, genuinely blocked)
+
+1. **Vercel redeploy**: `vercel` CLI has no cached login in this environment
+   (`vercel whoami` → "Logged out", confirmed live). The frontend changes
+   above (reset button, upload fallback, a11y, CSS) are committed to `main`
+   but **not yet live** on the Vercel URL — GitHub auto-deploy was already
+   confirmed broken for this project in a prior session. **User action
+   needed:** run `vercel --prod` from `frontend/` after `vercel login`
+   (interactive OAuth/email — cannot be done headlessly), or fix the GitHub
+   auto-connect in the Vercel dashboard.
+2. **Render ml-service creation**: no Render API key or CLI auth is available
+   in this session (checked: no `render` CLI, no cached key, `render.yaml`
+   alone doesn't create anything without someone applying it). **User action
+   needed:** Render dashboard → New → Blueprint → select this repo → Render
+   will read the updated `render.yaml` and offer to create `btp-ml-service`
+   alongside the existing `btp-backend`. Choosing/paying for the plan is a
+   billing decision left to the user (see `render.yaml`'s COST NOTE) — this
+   session did not commit you to any Render spend.
+3. Once `btp-ml-service` exists, set its real URL as `btp-backend`'s
+   `ML_SERVICE_URL` (Render dashboard env var) — this is the one remaining
+   wiring step for genuine production end-to-end functionality.
+4. **No browser automation tool was connected this session** (same gap noted
+   since 2026-09-05/07/08) — the frontend changes above are verified at the
+   build/lint/code level only, not by actually clicking through the UI.
+
+Until (1)-(3) happen, the live production app is unchanged from before this
+session (frontend+backend live, ml-service still unreachable from
+production) — what changed is the *code* now committed and ready to deploy,
+verified locally (ml-service: 37/37 pytest incl. 5 real-GPU-inference tests;
+backend: 13/13 jest; frontend: build+lint clean), not yet verified in
+production because deploying it requires the above user actions.
 
 ## Current phase
 
@@ -134,17 +234,18 @@ production. Now only the Vite dev server gets that fallback
 same-origin relative path instead. Verified absent from the deployed bundle
 (see above).
 
-**Known, honestly-stated gap: ml-service (FastAPI/Whisper) is NOT deployed.**
-The user was asked directly and chose to skip both institute GPU access and a
-paid cloud GPU service this session, keeping ml-service local-dev-only rather
-than have Claude attempt a fake or non-functional remote setup. Consequence:
-the live frontend + backend chain is real and reachable, but
-`POST /api/sessions/:id/transcribe` and the correction endpoints will fail
-with a network error in production, because `ML_SERVICE_URL` on Render points
-at a placeholder (`http://127.0.0.1:8000`, unreachable from Render's servers
-by construction) — this is expected, not a bug, and is the single missing
-link for genuine end-to-end production functionality. See "Next steps" if/when
-GPU hosting becomes available.
+**Known, honestly-stated gap: ml-service (FastAPI/Whisper) is packaged for
+Render (2026-09-12) but still NOT deployed.** See the "2026-09-12 session"
+section at the top of this file for exactly what was built
+(`docker/ml-service.render.Dockerfile`, `requirements-render.txt`, the
+`btp-ml-service` block in `render.yaml`) and exactly why it isn't live yet
+(no Render API key/CLI auth in this session — a real credential blocker, not
+a skipped task). Consequence: the live frontend + backend chain is real and
+reachable, but `POST /api/sessions/:id/transcribe` and the correction
+endpoints will fail with a network error in production until
+`ML_SERVICE_URL` on Render's backend is pointed at a real deployed
+`btp-ml-service` URL instead of today's placeholder
+(`http://127.0.0.1:8000`, unreachable from Render's servers by construction).
 
 ## Environment (inspected 2026-09-05)
 
@@ -222,10 +323,10 @@ GPU hosting becomes available.
 - Ground-truth capture (`Correction.groundTruthWord`, `Session.datasetProvenance`) and the `compute_correction_accuracy` metric now exist in the schema/evaluation code. A first correction-method comparison now exists (Experiments B/C, see above), but it used a gTTS-synthesized proxy for re-pronunciation audio, not real live-user data — the frontend still has not been manually tested end-to-end in a browser by any session, and the low/negative result should be re-checked against real user audio before treating it as validated.
 - Production deployment: frontend (Vercel) and backend (Render) are live (see "Current phase" above); the ml-service/GPU leg is what's unimplemented, blocked on institute SSH auth as described above. This needs the institute server admin (or the user) to authorize this machine's public key, or the user to complete an interactive password login themselves, before it can proceed.
 
-## Test status (as of this writing, all verified locally, 2026-09-08 under `uv`)
+## Test status (as of this writing, all verified locally, 2026-09-12 under `uv`)
 
-- ml-service: `uv run --directory ml-service python -m pytest tests/ -v` → 32 passed (5 marked `@pytest.mark.model`, includes real GPU Whisper inference and real LaBSE embedding inference) — up from 28 (added `tests/test_lexicon.py`, 4 tests)
-- backend: `npm test` → 5 passed (Jest + mongodb-memory-server)
+- ml-service: `uv run --directory ml-service python -m pytest tests/ -v` → **37 passed** (5 marked `@pytest.mark.model`, includes real GPU Whisper inference and real LaBSE embedding inference) — up from 32 (added `tests/test_correction_engine.py`, 5 tests, covering the multi-word-hypothesis fix + mode A/B semantic-score gating)
+- backend: `npm test` → **13 passed** (Jest + mongodb-memory-server) — up from 5 (added `mlServiceClient.test.js`, `correctionsFlow.test.js`, `uploadValidation.test.js`)
 - frontend: `npm run build` → succeeds; `npm run lint` → clean
 
 ## Experiments completed

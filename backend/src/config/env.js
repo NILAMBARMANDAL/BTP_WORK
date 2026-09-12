@@ -8,6 +8,11 @@ export const env = {
   mongoUri: process.env.MONGO_URI ?? "mongodb://127.0.0.1:27017/btp_asr",
   mongoMode: process.env.MONGO_MODE ?? "memory",
   mlServiceUrl: process.env.ML_SERVICE_URL ?? "http://127.0.0.1:8000",
+  // Whisper/correction inference can genuinely take tens of seconds on
+  // CPU-only hosting (Render ml-service has no GPU) — a short default
+  // fetch timeout would misreport real-but-slow inference as "unreachable".
+  // Override via ML_SERVICE_TIMEOUT_MS (render.yaml sets this explicitly).
+  mlServiceTimeoutMs: Number(process.env.ML_SERVICE_TIMEOUT_MS ?? 120000),
   audioStorageDir: process.env.AUDIO_STORAGE_DIR ?? "../storage/audio",
   // Comma-separated allowlist of frontend origins for CORS (spec section 32:
   // "restricted CORS" in production). Unset -> cors() default (any origin),

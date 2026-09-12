@@ -21,8 +21,8 @@ export function Recorder({ onRecorded, label = "Record" }) {
 
       {status === "recording" && (
         <div>
-          <span className="recording-indicator">● Recording…</span>
-          <button onClick={stop}>Stop</button>
+          <span className="recording-indicator" role="status">● Recording…</span>
+          <button onClick={stop} aria-label="Stop recording">Stop</button>
         </div>
       )}
 
@@ -36,8 +36,8 @@ export function Recorder({ onRecorded, label = "Record" }) {
         </div>
       )}
 
-      {(status === "permission_denied" || status === "error") && (
-        <div className="error-banner">
+      {(status === "permission_denied" || status === "unsupported" || status === "empty" || status === "error") && (
+        <div className="error-banner" role="alert">
           <p>{error}</p>
           <button onClick={reset}>Try again</button>
         </div>

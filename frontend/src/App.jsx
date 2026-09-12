@@ -63,6 +63,16 @@ function App() {
     correctionWorkflow.close();
   };
 
+  const handleNewRecording = () => {
+    setSession(null);
+    setTranscript(null);
+    setPipelineStatus("idle");
+    setPipelineError(null);
+    setSelectedWordIndex(null);
+    setAcceptedByIndex({});
+    correctionWorkflow.close();
+  };
+
   const correctionsByIndex = useMemo(() => {
     const map = {};
     for (const [idx, text] of Object.entries(acceptedByIndex)) {
@@ -83,11 +93,35 @@ function App() {
       </header>
 
       <section className="record-section">
-        <h2>1. Record speech</h2>
-        <Recorder label="Record Bengali speech" onRecorded={handleMainRecording} />
-        {pipelineStatus === "uploading" && <p className="hint">Uploading audio…</p>}
-        {pipelineStatus === "transcribing" && <p className="hint">Transcribing (this can take a while on first run)…</p>}
-        {pipelineStatus === "error" && <p className="error-banner">{pipelineError}</p>}
+        <h2>1. Record or upload Bengali speech</h2>
+        {!session && (
+          <>
+            <Recorder label="Record Bengali speech" onRecorded={handleMainRecording} />
+            <p className="hint upload-hint">
+              Or upload an audio file instead:{" "}
+              <input
+                type="file"
+                accept="audio/*"
+                aria-label="Upload a Bengali speech audio file"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleMainRecording(file);
+                  e.target.value = "";
+                }}
+              />
+            </p>
+          </>
+        )}
+        {pipelineStatus === "uploading" && <p className="hint" role="status">Uploading audio…</p>}
+        {pipelineStatus === "transcribing" && (
+          <p className="hint" role="status">Transcribing (this can take a while on first run, or on CPU-only hosting)…</p>
+        )}
+        {pipelineStatus === "error" && <p className="error-banner" role="alert">{pipelineError}</p>}
+        {session && (
+          <button className="new-recording-btn" onClick={handleNewRecording}>
+            Start a new recording
+          </button>
+        )}
       </section>
 
       {transcript && (

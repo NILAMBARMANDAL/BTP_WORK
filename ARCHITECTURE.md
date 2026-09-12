@@ -162,6 +162,51 @@ the standalone scripts). As of 2026-09-07 the project uses `uv` for Python
 dependency/environment management (root `pyproject.toml`/`uv.lock`) instead of
 a manually-managed `venv` + `requirements.txt` — see `GPU_SETUP.md`.
 
+## Render ML service (CPU path, packaged 2026-09-12 — not yet deployed)
+
+The browser never talks to ml-service directly (see "System overview" above)
+— it is only ever reached via the Node backend's `ML_SERVICE_URL`. This makes
+*where* ml-service actually runs a pure configuration choice, not an
+architectural one: local dev GPU, Render CPU, or the institute L40 are all
+"some URL `ML_SERVICE_URL` points at," switchable without touching backend or
+frontend code (see GPU_SETUP.md "Institute GPU").
+
+Render has no GPU tier available to this project, so the Render deployment
+path is deliberately a *different, smaller* configuration from the
+local-dev/institute-L40 one — not the same `large-v3`/cuda setup squeezed
+onto CPU:
+
+- `docker/ml-service.render.Dockerfile` — CPU-only base image, CPU PyTorch
+  wheel (not the multi-GB CUDA build `pyproject.toml` pins for GPU hosts),
+  binds to Render's injected `$PORT` rather than a hardcoded 8000.
+- `ml-service/requirements-render.txt` — excludes mlflow/zenml/remotezip/
+  pytest/gTTS. Those are research/evaluation/dev tooling (see EXPERIMENTS.md,
+  `pipelines/`) that the live `/health` / `/transcribe` / `/correct` request
+  path never imports — keeping them out of the production image is what spec
+  section 16 means by "make the experimental pipeline independent from the
+  production web deployment."
+- `render.yaml`'s `btp-ml-service` env vars set `WHISPER_MODEL_SIZE=small`,
+  `WHISPER_DEVICE=cpu`, `WHISPER_COMPUTE_TYPE=int8` — a practical *starting
+  point* for the cheapest viable Render compute, not a validated choice.
+  **Honestly flagged limitation:** GPU_SETUP.md's "Model size findings" is a
+  ONE-sample smoke test that found `small`/`medium` sometimes output
+  wrong-script text for Bengali. This has not been re-checked against a real
+  Render deployment (blocked on Render credentials, see PROGRESS.md). If a
+  live Render instance reproduces that problem, the fix is a one-line env var
+  change (`WHISPER_MODEL_SIZE=medium`, on a plan with enough RAM) — never a
+  code change, by design.
+- Lexicon-augmented candidate generation (`phonetics/lexicon.py`) is
+  explicitly disabled on Render (`CORRECTION_LEXICON_CONSTRAINT_ENABLED=false`)
+  because its source TSV is gitignored raw dataset data (spec section 12) and
+  isn't shipped in the image — the correction engine degrades gracefully to
+  raw-Whisper-hypothesis candidates without it (see `lexicon.py`'s own
+  `is_available()` check), just without that specific enhancement.
+
+Switching to the institute L40 later (spec section 17) means: deploy
+ml-service there with `docker/ml-service.Dockerfile` (the existing
+GPU/large-v3 image) instead, then change `ML_SERVICE_URL` on the Render
+backend to point at it. No backend/frontend code changes either way.
+
 ## Deployment
 
 **Frontend and backend are actually deployed and verified live** (2026-09-06/07
@@ -172,11 +217,15 @@ including the real Atlas IP-whitelist failure and fix):
 - Backend: Render web service (`render.yaml`), `autoDeploy: yes` on `main` —
   this one DOES auto-deploy on future pushes. Connected to a real MongoDB
   Atlas cluster.
-- **ml-service is not deployed** — no institute GPU access, and the user
-  declined paid cloud GPU hosting this session. It needs a persistent
-  GPU-capable (or at least long-running CPU) process, which rules out
-  Vercel/Render-style serverless/free-web-service hosting. This is the one
-  gap between the current deployment and full production functionality.
+- **ml-service is packaged for Render (2026-09-12, see "Render ML service"
+  above) but still NOT actually deployed** — creating the Render service
+  requires Render dashboard/API access this session didn't have (no cached
+  CLI login, no API key). It's a long-running web service (CPU, no GPU),
+  not a serverless function — `render.yaml`'s `btp-ml-service` block is
+  ready for the user to apply as a Render Blueprint. This is the one
+  remaining gap between the current deployment and full production
+  functionality; see `PROGRESS.md` "Blocked on credentials" for the exact
+  steps needed.
 
 For local multi-service dev: Docker Compose (`docker-compose.yml`). Docker
 Desktop is not installed in the current dev environment (no admin rights) —

@@ -108,7 +108,20 @@ def generate_candidates(request: CorrectionRequest) -> CorrectionResult:
 
     for hyp in hypotheses:
         acoustic = _acoustic_score_from_logprob(hyp.avg_logprob)
-        _add(hyp.text, acoustic)
+        tokens = hyp.text.split()
+        if len(tokens) <= 1:
+            _add(hyp.text, acoustic)
+        else:
+            # The correction unit is always a single selected word (the user
+            # re-pronounces only that word — see ARCHITECTURE.md/API.md). A
+            # short isolated-word clip should decode to one token, but Whisper
+            # sometimes hallucinates/repeats extra tokens on very short audio.
+            # Never let that multi-word blob stand as "the" candidate (it was
+            # observed to surface as `prediction`, effectively echoing a
+            # whole phrase instead of correcting the selected word) — fall
+            # back to scoring its individual tokens instead.
+            for token in tokens:
+                _add(token, acoustic)
         for lexicon_text in _lexicon_augmented_texts(hyp.text):
             _add(lexicon_text, acoustic * _LEXICON_ACOUSTIC_DISCOUNT)
 

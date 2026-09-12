@@ -20,7 +20,12 @@ export const audioUpload = multer({
   limits: { fileSize: env.maxAudioUploadMb * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
-      cb(new Error(`Unsupported audio type: ${file.mimetype}`));
+      // Client-side validation error, not a server fault — errorHandler.js
+      // reads `.status` to decide the response code (and whether to log it
+      // as a server error), so this must not fall through to a bare 500.
+      const err = new Error(`Unsupported audio type: ${file.mimetype}`);
+      err.status = 400;
+      cb(err);
       return;
     }
     cb(null, true);

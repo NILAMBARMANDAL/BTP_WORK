@@ -14,8 +14,18 @@ async function postForm(path, form) {
     res = await fetch(`${env.mlServiceUrl}${path}`, {
       method: "POST",
       body: form,
+      // Whisper/correction inference can take a long time on CPU-only
+      // hosting; without an explicit signal, a hung connection would block
+      // the request indefinitely instead of surfacing a clear error.
+      signal: AbortSignal.timeout(env.mlServiceTimeoutMs),
     });
   } catch (cause) {
+    if (cause.name === "TimeoutError" || cause.name === "AbortError") {
+      throw new MlServiceError(
+        `ml-service at ${env.mlServiceUrl} did not respond within ${env.mlServiceTimeoutMs}ms`,
+        504
+      );
+    }
     // fetch() throws a bare "fetch failed" (no context) on connection
     // refused/DNS failure — surface something a user-facing error message
     // can actually explain, rather than leaking a raw Node/undici message.

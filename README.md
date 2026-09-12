@@ -35,12 +35,17 @@ See [`PROGRESS.md`](./PROGRESS.md) for exact state.
 - **Frontend (live):** https://frontend-three-psi-tz8kxezc8c.vercel.app
 - **Backend (live):** https://btp-backend-ofur.onrender.com (`GET /health`
   returns `{"status":"ok"}`; connected to a real MongoDB Atlas cluster)
-- **ml-service (Whisper/correction):** NOT deployed — local-dev-only by
-  explicit user decision (no institute GPU access, declined paid cloud GPU
-  hosting this session). The deployed frontend+backend chain works for
-  session/CORS/DB plumbing, but transcription/correction requests will fail
-  with a network error until ml-service has somewhere to run. This is the
-  one missing link for full end-to-end production functionality.
+- **ml-service (Whisper/correction):** packaged for Render (CPU) as of
+  2026-09-12 — `docker/ml-service.render.Dockerfile` +
+  `ml-service/requirements-render.txt` + the `btp-ml-service` block in
+  `render.yaml` — but **not yet deployed**: creating it requires Render
+  dashboard/API access this session didn't have. The deployed
+  frontend+backend chain works for session/CORS/DB plumbing, but
+  transcription/correction requests will fail with a network error until
+  someone applies the Render Blueprint (exact steps in `PROGRESS.md`
+  "Blocked on credentials") and sets the backend's `ML_SERVICE_URL` to the
+  result. This is the one missing link for full end-to-end production
+  functionality.
 
 ## Local development environment (as inspected)
 

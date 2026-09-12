@@ -3,7 +3,7 @@ import { useCallback, useRef, useState } from "react";
 /**
  * Wraps MediaRecorder with explicit states so components can render
  * permission errors / recording state without duplicating this logic.
- * status: "idle" | "requesting" | "recording" | "stopped" | "permission_denied" | "error"
+ * status: "idle" | "requesting" | "recording" | "stopped" | "permission_denied" | "unsupported" | "empty" | "error"
  */
 export function useAudioRecorder() {
   const [status, setStatus] = useState("idle");
@@ -16,6 +16,13 @@ export function useAudioRecorder() {
   const start = useCallback(async () => {
     setError(null);
     setAudioBlob(null);
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setStatus("unsupported");
+      setError("This browser doesn't support microphone recording. Try a recent Chrome, Firefox, or Edge.");
+      return;
+    }
+
     setStatus("requesting");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -30,9 +37,14 @@ export function useAudioRecorder() {
       };
       recorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        stream.getTracks().forEach((t) => t.stop());
+        if (blob.size === 0) {
+          setStatus("empty");
+          setError("No audio was captured — please try recording again.");
+          return;
+        }
         setAudioBlob(blob);
         setStatus("stopped");
-        stream.getTracks().forEach((t) => t.stop());
       };
 
       recorder.start();
