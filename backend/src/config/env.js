@@ -13,6 +13,12 @@ export const env = {
   // fetch timeout would misreport real-but-slow inference as "unreachable".
   // Override via ML_SERVICE_TIMEOUT_MS (render.yaml sets this explicitly).
   mlServiceTimeoutMs: Number(process.env.ML_SERVICE_TIMEOUT_MS ?? 120000),
+  // Shared secret for backend -> ml-service auth (required once ml-service
+  // is reachable over the public internet, e.g. a tunnel from a local
+  // machine — see ARCHITECTURE.md "Local ML hosting + tunnel"). Empty by
+  // default (no header sent) for local-only dev where ml-service has no auth
+  // configured either.
+  mlServiceApiKey: process.env.ML_SERVICE_API_KEY ?? "",
   audioStorageDir: process.env.AUDIO_STORAGE_DIR ?? "../storage/audio",
   // Comma-separated allowlist of frontend origins for CORS (spec section 32:
   // "restricted CORS" in production). Unset -> cors() default (any origin),

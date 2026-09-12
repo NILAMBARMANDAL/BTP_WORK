@@ -71,6 +71,13 @@ class Settings(BaseSettings):
     # --- Service ---
     ml_service_host: str = "0.0.0.0"
     ml_service_port: int = 8000
+    # Shared-secret auth between the Node backend and this service — required
+    # once this service is reachable over the public internet (e.g. via a
+    # tunnel from a local machine, not just localhost/private Docker network).
+    # Empty (default) = no auth required, matching prior local-dev behavior
+    # where ml-service was never itself internet-facing. Never sent to or
+    # readable by the browser — only backend -> ml-service, over HTTPS.
+    ml_service_api_key: str = ""
 
 
 settings = Settings()

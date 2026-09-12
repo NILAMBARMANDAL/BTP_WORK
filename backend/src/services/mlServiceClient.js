@@ -14,6 +14,9 @@ async function postForm(path, form) {
     res = await fetch(`${env.mlServiceUrl}${path}`, {
       method: "POST",
       body: form,
+      // Sent only backend -> ml-service, over HTTPS (the tunnel) — never
+      // forwarded to or readable by the browser. No-op header if unset.
+      headers: env.mlServiceApiKey ? { "X-ML-Service-Key": env.mlServiceApiKey } : undefined,
       // Whisper/correction inference can take a long time on CPU-only
       // hosting; without an explicit signal, a hung connection would block
       // the request indefinitely instead of surfacing a clear error.

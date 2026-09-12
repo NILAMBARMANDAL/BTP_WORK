@@ -54,6 +54,8 @@ ml-service/models/*
 
 # Vendored native tools (espeak-ng, fetched/extracted by scripts/setup_espeak.ps1 — not committed, ~37MB binary)
 ml-service/vendor/
+# cloudflared binary (fetched by scripts/start-local-ml.ps1's own instructions — not committed, ~55MB binary)
+tools/
 
 # OS / editor
 .DS_Store
@@ -63,7 +65,9 @@ Thumbs.db
 
 # Logs
 *.log
+*.log.err
 logs/
+storage/logs/
 
 # MongoDB local data (mongodb-memory-server cache, local mongod data dir)
 .mongodb-binaries/

@@ -162,50 +162,78 @@ the standalone scripts). As of 2026-09-07 the project uses `uv` for Python
 dependency/environment management (root `pyproject.toml`/`uv.lock`) instead of
 a manually-managed `venv` + `requirements.txt` — see `GPU_SETUP.md`.
 
-## Render ML service (CPU path, packaged 2026-09-12 — not yet deployed)
+## Local ML hosting + tunnel (current public configuration, 2026-09-12)
 
 The browser never talks to ml-service directly (see "System overview" above)
 — it is only ever reached via the Node backend's `ML_SERVICE_URL`. This makes
 *where* ml-service actually runs a pure configuration choice, not an
-architectural one: local dev GPU, Render CPU, or the institute L40 are all
+architectural one: local dev, a tunneled laptop, or the institute L40 are all
 "some URL `ML_SERVICE_URL` points at," switchable without touching backend or
 frontend code (see GPU_SETUP.md "Institute GPU").
 
-Render has no GPU tier available to this project, so the Render deployment
-path is deliberately a *different, smaller* configuration from the
-local-dev/institute-L40 one — not the same `large-v3`/cuda setup squeezed
-onto CPU:
+**Render's free web-service tier cannot run this project's ml-service at
+all** — this is a measured finding (2026-09-12, on this project's own dev
+GPU laptop), not a guess, and is why the ML leg is NOT deployed to Render:
 
-- `docker/ml-service.render.Dockerfile` — CPU-only base image, CPU PyTorch
-  wheel (not the multi-GB CUDA build `pyproject.toml` pins for GPU hosts),
-  binds to Render's injected `$PORT` rather than a hardcoded 8000.
-- `ml-service/requirements-render.txt` — excludes mlflow/zenml/remotezip/
-  pytest/gTTS. Those are research/evaluation/dev tooling (see EXPERIMENTS.md,
-  `pipelines/`) that the live `/health` / `/transcribe` / `/correct` request
-  path never imports — keeping them out of the production image is what spec
-  section 16 means by "make the experimental pipeline independent from the
-  production web deployment."
-- `render.yaml`'s `btp-ml-service` env vars set `WHISPER_MODEL_SIZE=small`,
-  `WHISPER_DEVICE=cpu`, `WHISPER_COMPUTE_TYPE=int8` — a practical *starting
-  point* for the cheapest viable Render compute, not a validated choice.
-  **Honestly flagged limitation:** GPU_SETUP.md's "Model size findings" is a
-  ONE-sample smoke test that found `small`/`medium` sometimes output
-  wrong-script text for Bengali. This has not been re-checked against a real
-  Render deployment (blocked on Render credentials, see PROGRESS.md). If a
-  live Render instance reproduces that problem, the fix is a one-line env var
-  change (`WHISPER_MODEL_SIZE=medium`, on a plan with enough RAM) — never a
-  code change, by design.
-- Lexicon-augmented candidate generation (`phonetics/lexicon.py`) is
-  explicitly disabled on Render (`CORRECTION_LEXICON_CONSTRAINT_ENABLED=false`)
-  because its source TSV is gitignored raw dataset data (spec section 12) and
-  isn't shipped in the image — the correction engine degrades gracefully to
-  raw-Whisper-hypothesis candidates without it (see `lexicon.py`'s own
-  `is_available()` check), just without that specific enhancement.
+| Model (faster-whisper, CPU, int8) | Real RSS measured | Real output on a real Bengali sample |
+|---|---|---|
+| `tiny` | ~305 MB | `'Amar shonar banglami tomai vhalobashi'` — **romanized/Banglish, not Bengali script** |
+| `base` | ~341 MB | `'Amar sonar bangla amitomay bhalobashi.'` — **romanized/Banglish, not Bengali script** |
+| `small` | ~499 MB (at Render's 512MB ceiling) | Devanagari-script transliteration — **not Bengali script** |
+| `medium` | ~1005 MB — **exceeds the 512MB budget outright** | genuinely Bengali script, but can't fit |
 
-Switching to the institute L40 later (spec section 17) means: deploy
+(Ground truth for the sample: "আমার সোনার বাংলা, আমি তোমায় ভালোবাসি" — the
+opening of Bangladesh's national anthem, the project's standing smoke-test
+line; see GPU_SETUP.md.) No model size that fits Render's free 512MB produces
+correct Bengali script — this isn't a tuning problem; lowering
+`WHISPER_BEAM_SIZE` or disabling semantic scoring doesn't change a model's
+learned output script. Render's free tier was therefore ruled out by real
+evidence, not assumption, and no paid Render plan was purchased to work
+around it (per explicit instruction: Render stays 100% free, backend-only).
+
+**Current arrangement: the ml-service runs on the user's own laptop**
+(AMD Ryzen 5 4600H, 32GB RAM, NVIDIA GTX 1650/4GB VRAM), using the exact same
+`large-v3`/`cuda`/`int8_float16` configuration already validated by this
+project's own 200-sample real baseline eval (see EXPERIMENTS.md) — re-verified
+working on this exact GPU on 2026-09-12: `torch.cuda.is_available()` ->
+`True`, real inference in ~6s (incl. model load) on a real Bengali sample,
+correct Bengali script output (`'আমার শোনার বাংলা আমি তোমায় ভালো বাশি'`),
+~1.5-2GB of the 4GB VRAM used, released cleanly after the process exits.
+
+- `scripts/start-local-ml.ps1` — starts `uvicorn api.main:app` (via `uv run
+  --directory ml-service`) and a free Cloudflare **Quick Tunnel**
+  (`tools/cloudflared.exe tunnel --url http://127.0.0.1:8000` — no
+  Cloudflare account or domain needed), prints the public
+  `https://*.trycloudflare.com` URL, and health-checks it for real before
+  declaring success.
+- **Quick Tunnel limitation, stated plainly:** the public hostname is
+  randomly generated *every time the script restarts* — there is no free way
+  to get a stable hostname without a Cloudflare account + a domain you own
+  (a named Tunnel instead of a Quick Tunnel). Whenever the laptop/tunnel
+  restarts, `ML_SERVICE_URL` must be updated in the Render dashboard to the
+  new URL. The laptop must stay powered on, FastAPI must keep running, and
+  the tunnel must keep running for the public app to actually work — this is
+  explicitly a temporary/dev-grade hosting arrangement, not a production SLA.
+- **Shared-secret auth** (`ml-service/api/main.py`'s `require_api_key`
+  dependency, gating `POST /transcribe` and `POST /correct` — `/health` stays
+  open): once ml-service is reachable from the public internet rather than a
+  private Docker network, it needs *some* access control. `ML_SERVICE_API_KEY`
+  must match between the backend and ml-service; sent only as the
+  `X-ML-Service-Key` header on backend -> ml-service requests
+  (`mlServiceClient.js`), never forwarded to or readable by the browser.
+  Empty (default) = no auth, for local-only dev where this was never
+  internet-facing before.
+- Lexicon-augmented candidate generation, LaBSE semantic scoring, and the
+  full correction-engine research design are all unchanged and running for
+  real on the laptop — no feature was cut to make this fit, because the
+  laptop (32GB RAM) has no memory pressure Render's free tier had.
+
+Switching to the institute L40 later (spec section 17/20) means: deploy
 ml-service there with `docker/ml-service.Dockerfile` (the existing
-GPU/large-v3 image) instead, then change `ML_SERVICE_URL` on the Render
-backend to point at it. No backend/frontend code changes either way.
+GPU/large-v3 image, unchanged) instead of the laptop, then change
+`ML_SERVICE_URL` on the Render backend to point at it. No backend/frontend
+code changes either way — this is the entire reason ml-service's location is
+a config value, not an architectural one.
 
 ## Deployment
 
@@ -217,15 +245,14 @@ including the real Atlas IP-whitelist failure and fix):
 - Backend: Render web service (`render.yaml`), `autoDeploy: yes` on `main` —
   this one DOES auto-deploy on future pushes. Connected to a real MongoDB
   Atlas cluster.
-- **ml-service is packaged for Render (2026-09-12, see "Render ML service"
-  above) but still NOT actually deployed** — creating the Render service
-  requires Render dashboard/API access this session didn't have (no cached
-  CLI login, no API key). It's a long-running web service (CPU, no GPU),
-  not a serverless function — `render.yaml`'s `btp-ml-service` block is
-  ready for the user to apply as a Render Blueprint. This is the one
-  remaining gap between the current deployment and full production
-  functionality; see `PROGRESS.md` "Blocked on credentials" for the exact
-  steps needed.
+- **ml-service runs on the user's own laptop, reached via a free Cloudflare
+  Quick Tunnel** (2026-09-12, see "Local ML hosting + tunnel" above) —
+  real-verified end-to-end (local backend -> tunnel -> laptop Whisper ->
+  candidates -> accept), not deployed anywhere else. `btp-backend`'s
+  `ML_SERVICE_URL`/`ML_SERVICE_API_KEY` on Render still need to be set to the
+  laptop's current tunnel URL/secret by the account owner (Render dashboard —
+  this session had no Render API key to do it directly); see `PROGRESS.md`
+  "Blocked on credentials" for the exact remaining step.
 
 For local multi-service dev: Docker Compose (`docker-compose.yml`). Docker
 Desktop is not installed in the current dev environment (no admin rights) —

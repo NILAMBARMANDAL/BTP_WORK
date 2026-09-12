@@ -35,27 +35,27 @@ def is_available() -> bool:
 
 
 @lru_cache(maxsize=8192)
-def to_phonemes(bengali_text: str) -> str | None:
-    """Returns espeak-ng's ASCII phoneme transcription of the text, or None
-    if espeak-ng isn't available (caller should fall back to g2p.py).
+def _to_phonemes_or_raise(bengali_text: str) -> str:
+    """Does the actual espeak-ng subprocess call. Raises on any failure
+    instead of returning None, specifically so `lru_cache` never caches a
+    failure — `functools.lru_cache` does not cache a raised exception, only a
+    returned value. This matters because a failure here can be transient
+    (e.g. a momentary subprocess-spawn hiccup under the rapid-fire repeated
+    calls phonetics/lexicon.py makes while re-ranking a shortlist — a real
+    failure mode observed in production: a word's phonetic score silently and
+    *permanently* stuck at 0.0 for the rest of the process's life because one
+    unlucky call got cached as "espeak-ng can't transcribe this"). Whether
+    espeak-ng is installed at all is a separate, genuinely static fact,
+    already cached correctly by `is_available()`/`_resolve_espeak_exe()`.
 
     Text is passed via a temp file (`-f`), not argv, because passing Bengali
     (or any non-ASCII) text as a Windows subprocess argument was observed to
     corrupt the encoding / crash the process — a real issue hit during
     integration, not a hypothetical concern.
-
-    Cached (pure function of `bengali_text`, and espeak-ng's own binary/data
-    path don't change at runtime): each call spawns a real OS subprocess plus
-    a temp-file write, which is slow (tens of ms) — a real, measured cost that
-    matters now that phonetics/lexicon.py can call this many times per
-    candidate when re-ranking a lexicon shortlist. Discovered during the
-    2026-09-07 lexicon-augmentation correction-eval re-run taking far longer
-    than the pre-lexicon baseline; this cache is the fix, not a preemptive
-    optimization.
     """
     exe = _resolve_espeak_exe()
-    if exe is None or not bengali_text:
-        return None
+    if exe is None:
+        raise RuntimeError("espeak-ng is not available in this environment")
 
     args = [exe, "-v", "bn", "-x", "-q"]
     if settings.espeak_ng_data_path:
@@ -74,9 +74,24 @@ def to_phonemes(bengali_text: str) -> str | None:
             timeout=10,
         )
         if result.returncode != 0:
-            return None
+            raise RuntimeError(f"espeak-ng exited {result.returncode}: {result.stderr.strip()}")
         return result.stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return None
     finally:
         Path(tmp_path).unlink(missing_ok=True)
+
+
+def to_phonemes(bengali_text: str) -> str | None:
+    """Returns espeak-ng's ASCII phoneme transcription of the text, or None
+    if espeak-ng isn't available or this specific call failed (caller should
+    fall back to g2p.py). See `_to_phonemes_or_raise` for why failures are
+    never permanently cached, only successes — each call still spawns a real
+    OS subprocess plus a temp-file write the first time (slow, tens of ms),
+    which is why successes ARE cached: phonetics/lexicon.py can call this many
+    times per candidate when re-ranking a shortlist (see its own docstring
+    for the 2026-09-07 perf fix this caching was originally added for)."""
+    if not bengali_text:
+        return None
+    try:
+        return _to_phonemes_or_raise(bengali_text)
+    except (OSError, subprocess.SubprocessError, RuntimeError):
+        return None

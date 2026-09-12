@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 
 import imageio_ffmpeg
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 
 # CTranslate2 (used by faster-whisper) needs cuBLAS/cuDNN DLLs on Windows but
 # does not ship or locate them itself. PyTorch's cu121 wheel already bundles
@@ -28,6 +28,7 @@ if sys.platform == "win32":
 from audio.preprocessing import load_and_preprocess
 from correction.base import CorrectionRequest
 from correction.pronunciation_engine import generate_candidates
+from utils.config import settings
 from whisper.engine import transcribe
 
 # faster-whisper / soundfile fall back to ffmpeg being on PATH for some codecs;
@@ -35,6 +36,19 @@ from whisper.engine import transcribe
 os.environ.setdefault("IMAGEIO_FFMPEG_EXE", imageio_ffmpeg.get_ffmpeg_exe())
 
 app = FastAPI(title="BTP Bengali ASR Correction — ML Service")
+
+
+def require_api_key(x_ml_service_key: str | None = Header(default=None)):
+    """Shared-secret check for POST routes only — /health stays open so a
+    tunnel/uptime check doesn't need the secret. No-op (open access) if
+    ML_SERVICE_API_KEY is unset, matching prior behavior for local-only/
+    private-network deployments. This secret is backend->ml-service only;
+    the browser never sends or sees it (see ARCHITECTURE.md "Local ML
+    hosting + tunnel")."""
+    if not settings.ml_service_api_key:
+        return
+    if x_ml_service_key != settings.ml_service_api_key:
+        raise HTTPException(status_code=401, detail="Missing or invalid ML service API key")
 
 
 @app.get("/health")
@@ -49,7 +63,7 @@ def _save_upload_to_tempfile(upload: UploadFile) -> str:
         return tmp.name
 
 
-@app.post("/transcribe")
+@app.post("/transcribe", dependencies=[Depends(require_api_key)])
 async def transcribe_endpoint(file: UploadFile = File(...)):
     tmp_path = _save_upload_to_tempfile(file)
     try:
@@ -78,7 +92,7 @@ async def transcribe_endpoint(file: UploadFile = File(...)):
     }
 
 
-@app.post("/correct")
+@app.post("/correct", dependencies=[Depends(require_api_key)])
 async def correct_endpoint(
     file: UploadFile = File(...),
     original_word: str = Form(...),

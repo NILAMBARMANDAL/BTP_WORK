@@ -14,8 +14,15 @@ from fastapi.testclient import TestClient
 
 from api.main import app
 from phonetics.similarity import phonetic_similarity
+from utils.config import settings
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+# Tests run against whatever ML_SERVICE_API_KEY is actually configured in
+# this environment (e.g. a real local .env set up for tunnel testing, or
+# unset in CI) — send the header whenever one is configured so these tests
+# don't depend on the key being empty.
+AUTH_HEADERS = {"X-ML-Service-Key": settings.ml_service_api_key} if settings.ml_service_api_key else {}
 
 
 @pytest.fixture(scope="module")
@@ -37,7 +44,7 @@ def test_transcribe_returns_structured_words(client):
         pytest.skip("fixture not present; run scripts/generate_fixtures.py")
 
     with sample.open("rb") as f:
-        res = client.post("/transcribe", files={"file": ("sample_bn.mp3", f, "audio/mpeg")})
+        res = client.post("/transcribe", files={"file": ("sample_bn.mp3", f, "audio/mpeg")}, headers=AUTH_HEADERS)
 
     assert res.status_code == 200
     body = res.json()
@@ -68,6 +75,7 @@ def test_correct_returns_ranked_candidates(client):
                 "context_text": "আমার বাড়ি",
                 "mode": "pronunciation_only",
             },
+            headers=AUTH_HEADERS,
         )
 
     assert res.status_code == 200
@@ -92,6 +100,24 @@ def test_correct_rejects_invalid_mode(client):
             "/correct",
             files={"file": ("correction_sonar.mp3", f, "audio/mpeg")},
             data={"original_word": "x", "mode": "not_a_real_mode"},
+            headers=AUTH_HEADERS,
         )
 
     assert res.status_code == 400
+
+
+def test_correct_rejects_missing_api_key_when_configured(client):
+    if not settings.ml_service_api_key:
+        pytest.skip("ML_SERVICE_API_KEY is not set in this environment")
+    sample = FIXTURES / "correction_sonar.mp3"
+    if not sample.exists():
+        pytest.skip("fixture not present; run scripts/generate_fixtures.py")
+
+    with sample.open("rb") as f:
+        res = client.post(
+            "/correct",
+            files={"file": ("correction_sonar.mp3", f, "audio/mpeg")},
+            data={"original_word": "x", "mode": "pronunciation_only"},
+        )
+
+    assert res.status_code == 401

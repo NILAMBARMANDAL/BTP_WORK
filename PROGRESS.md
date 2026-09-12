@@ -21,25 +21,22 @@ trusting it in a future session._
   `ml-service/tests/test_correction_engine.py` (5 tests, mocked Whisper call,
   no GPU needed) plus the existing real-GPU `test_correct_returns_ranked_candidates`
   re-verified passing after the fix.
-- **ml-service is now packaged for Render (CPU), but NOT deployed** (no Render
-  API key / CLI auth available in this session — see "Blocked on credentials"):
-  - `docker/ml-service.render.Dockerfile` — CPU-only image (`python:3.12-slim`,
-    CPU PyTorch wheel from `download.pytorch.org/whl/cpu` instead of the
-    multi-GB CUDA build, espeak-ng via apt), binds to Render's `$PORT`.
-  - `ml-service/requirements-render.txt` — a deliberately smaller dependency
-    set than `pyproject.toml`/`uv.lock` (drops mlflow/zenml/remotezip/pytest/gTTS
-    — research/dev-only tooling the live web deployment never calls at request
-    time; see ARCHITECTURE.md "Render ML service").
-  - `render.yaml` now defines a second service, `btp-ml-service`, with
-    Render-practical env defaults: `WHISPER_MODEL_SIZE=small`,
-    `WHISPER_DEVICE=cpu`, `WHISPER_COMPUTE_TYPE=int8`, lexicon augmentation
-    disabled (its TSV isn't shipped — gitignored raw data, per spec section 12).
-    **`small` was only ever smoke-tested on ONE sample for Bengali
-    script-correctness (GPU_SETUP.md) — this is NOT verified on a real Render
-    instance yet.** The local-dev/institute-L40 default
-    (`large-v3`/cuda, in `.env.example`/`pyproject.toml`) is untouched.
-  - Backend hardening for a CPU ml-service that may be slow: `ML_SERVICE_TIMEOUT_MS`
-    (default 120000) wired through `mlServiceClient.js` via `AbortSignal.timeout`,
+- **First attempted: package ml-service for Render's free tier. Real
+  measurement showed this is impossible, not impractical** — see
+  "ml-service pivot: Render free tier ruled out by measurement, laptop +
+  tunnel instead" below for the full, real evidence. The Render CPU
+  packaging (`docker/ml-service.render.Dockerfile`,
+  `ml-service/requirements-render.txt`, a `btp-ml-service` block in
+  `render.yaml`) was built, then **deleted** once real measurement showed no
+  model size fits both Render's 512MB free RAM ceiling *and* produces correct
+  Bengali script — keeping dead infrastructure that doesn't actually work
+  would be worse than removing it. `render.yaml` now defines only
+  `btp-backend`, unchanged in spirit from before, plus two new env vars
+  (`ML_SERVICE_API_KEY`, `ML_SERVICE_TIMEOUT_MS`) for the laptop+tunnel
+  arrangement that replaced it.
+  - Backend hardening for a possibly-slow/tunneled ml-service:
+    `ML_SERVICE_TIMEOUT_MS` (default 120000, 180000 recommended for the
+    tunnel) wired through `mlServiceClient.js` via `AbortSignal.timeout`,
     surfaced as a distinct 504 (not a generic network error).
   - Fixed a real bug while reviewing upload validation: unsupported file type
     and oversized-upload errors were mapping to HTTP 500 instead of 400
@@ -72,37 +69,123 @@ trusting it in a future session._
   `{"status":"ok"}` and a DB-roundtrip 404 check passed — both still live, as
   of 2026-09-12, matching the prior session's claims.
 
+### ml-service pivot: Render free tier ruled out by measurement, laptop + tunnel instead
+
+The user's instruction was explicit and is honored exactly: Render must stay
+100% free, no paid plan, no billing. Rather than guess whether a small
+faster-whisper model could work within Render's free 512MB/0.1 CPU web
+service, this session **measured it for real** on this project's own dev
+laptop (same GPU machine `GPU_SETUP.md` already documents), using real
+process RSS (`psutil`) and a real Bengali audio fixture
+(`ml-service/tests/fixtures/sample_bn.mp3`), with `SEMANTIC_SCORING`
+untouched and no torch/sentence-transformers imported (mirroring what a
+lean Render image would actually run):
+
+| Model | Measured RSS (CPU, int8) | Real transcription output |
+|---|---|---|
+| `tiny` | ~305 MB | `Amar shonar banglami tomai vhalobashi` — romanized, not Bengali script |
+| `base` | ~341 MB | `Amar sonar bangla amitomay bhalobashi.` — romanized, not Bengali script |
+| `small` | ~499 MB | Devanagari-script transliteration — not Bengali script |
+| `medium` | ~1005 MB | genuinely Bengali script, correct — but over 2x Render's free RAM ceiling |
+
+**Conclusion, stated plainly: there is no model size that both fits Render's
+free 512MB and outputs correct Bengali script.** This is a real technical
+blocker, not a preference — per the user's own fallback instruction ("if the
+free Render limits make the current ML stack impossible... clearly report
+the exact technical blocker"), this is that report. No paid Render plan was
+purchased or recommended as a workaround.
+
+The user then redirected the architecture mid-session: run ml-service on
+their own laptop (confirmed hardware: AMD Ryzen 5 4600H, 32GB RAM, NVIDIA GTX
+1650/4GB VRAM — the same machine this whole session runs on) instead of any
+institute/third-party/paid server, reached from the Render backend via a free
+Cloudflare Quick Tunnel. This was implemented and **verified for real, not
+claimed**:
+
+- `nvidia-smi` confirmed the GPU, driver 566.07, CUDA 12.7, 4096MiB VRAM,
+  ~4GB free.
+- Re-ran real CUDA inference with this project's own existing default
+  config (`large-v3`/`cuda`/`int8_float16` — already what `.env.example`
+  specifies, no change needed): loaded in 12.1s, real inference in 6.32s on
+  the `sample_bn.mp3` fixture, output `'আমার শোনার বাংলা আমি তোমায় ভালো
+  বাশি'` — correct Bengali script, consistent with the existing 200-sample
+  baseline eval in EXPERIMENTS.md. VRAM released cleanly after the process
+  exited.
+- `tools/cloudflared.exe` (official Cloudflare binary, downloaded directly
+  from `github.com/cloudflare/cloudflared` releases — no account/install/
+  admin rights needed) + new `scripts/start-local-ml.ps1` start ml-service
+  and a Quick Tunnel together, parse the public URL from cloudflared's own
+  output, and health-check it before declaring success.
+- **Added shared-secret auth** (`ML_SERVICE_API_KEY`, `X-ML-Service-Key`
+  header) since ml-service is now reachable from the public internet —
+  `ml-service/api/main.py`'s `require_api_key` FastAPI dependency gates
+  `/transcribe` and `/correct` (not `/health`); `backend/src/services/
+  mlServiceClient.js` sends it. Verified: a request without the header
+  returns 401; with the correct key, 200 with real results.
+- **Real end-to-end verification performed** (script used, not narrated):
+  started ml-service + tunnel locally, started the Node backend locally with
+  `ML_SERVICE_URL` pointed at the live tunnel URL, then ran an actual client
+  script against the real backend REST API: `POST /api/sessions` (real
+  Bengali sentence audio) → `POST /api/sessions/:id/transcribe` (backend →
+  tunnel → laptop Whisper) → transcript `["আমার","শোনার","বাংলা","আমি",
+  "তোমায়","ভালো","বাশি"]` → flagged word index 1 (`"শোনার"`, the project's
+  documented স/শ ambiguity) → `POST /api/corrections` → `POST /api/
+  corrections/:id/attempts` (isolated-word re-pronunciation audio) →
+  **prediction `"সোনার"` — the correct word** → `POST /api/corrections/:id/
+  accept` → `status: "accepted"`. Also separately verified Mode B
+  (`pronunciation_meaning`) returns real nonzero LaBSE semantic scores
+  distinct from Mode A's `0.0`.
+- **A real bug found and fixed along the way, honestly scoped:** while
+  investigating an initial `phoneticScore: 0.0` reading from a manual `curl`
+  test, root-caused it to `curl`'s own Bengali command-line-argument encoding
+  on this Windows/git-bash setup (confirmed by replaying the *exact same*
+  request via a properly UTF-8-encoded Python script against the same live
+  tunnel, which returned correct nonzero phonetic scores) — **not a
+  server-side bug**. While investigating, a separate, real, independent
+  issue was found and fixed regardless:
+  `ml-service/phonetics/espeak_g2p.py`'s `to_phonemes()` used
+  `@lru_cache` directly on a function that returns `None` on failure,
+  meaning one transient espeak-ng subprocess hiccup (plausible given
+  `phonetics/lexicon.py` can fire off dozens of rapid subprocess calls
+  re-ranking a shortlist) would get **permanently** cached as "this word
+  can't be phonetically scored" for the rest of the process's life. Fixed by
+  splitting into a cached helper that raises on failure (exceptions are
+  never cached by `lru_cache`) and an uncached public wrapper that catches
+  it — successes are still cached (preserving the original perf fix), only
+  failures are retried. All 38 ml-service tests pass after this change.
+
 ### Blocked on credentials (exact blockers, per spec section 20 — not skipped, genuinely blocked)
 
 1. **Vercel redeploy**: `vercel` CLI has no cached login in this environment
-   (`vercel whoami` → "Logged out", confirmed live). The frontend changes
-   above (reset button, upload fallback, a11y, CSS) are committed to `main`
-   but **not yet live** on the Vercel URL — GitHub auto-deploy was already
-   confirmed broken for this project in a prior session. **User action
-   needed:** run `vercel --prod` from `frontend/` after `vercel login`
-   (interactive OAuth/email — cannot be done headlessly), or fix the GitHub
-   auto-connect in the Vercel dashboard.
-2. **Render ml-service creation**: no Render API key or CLI auth is available
-   in this session (checked: no `render` CLI, no cached key, `render.yaml`
-   alone doesn't create anything without someone applying it). **User action
-   needed:** Render dashboard → New → Blueprint → select this repo → Render
-   will read the updated `render.yaml` and offer to create `btp-ml-service`
-   alongside the existing `btp-backend`. Choosing/paying for the plan is a
-   billing decision left to the user (see `render.yaml`'s COST NOTE) — this
-   session did not commit you to any Render spend.
-3. Once `btp-ml-service` exists, set its real URL as `btp-backend`'s
-   `ML_SERVICE_URL` (Render dashboard env var) — this is the one remaining
-   wiring step for genuine production end-to-end functionality.
-4. **No browser automation tool was connected this session** (same gap noted
-   since 2026-09-05/07/08) — the frontend changes above are verified at the
-   build/lint/code level only, not by actually clicking through the UI.
+   (`vercel whoami` → "Logged out", confirmed live). Frontend changes from
+   earlier in this session (reset button, upload fallback, a11y, CSS) are
+   committed to `main` but **not yet live** on the Vercel URL — GitHub
+   auto-deploy was already confirmed broken for this project in a prior
+   session. **User action needed:** run `vercel --prod` from `frontend/`
+   after `vercel login` (interactive OAuth/email — cannot be done
+   headlessly), or fix the GitHub auto-connect in the Vercel dashboard.
+2. **Render backend env vars**: `ML_SERVICE_URL` and `ML_SERVICE_API_KEY`
+   must be set on the live `btp-backend` Render service to the laptop's
+   current tunnel URL and the secret in `ml-service/.env`/`backend/.env`
+   (not committed — see those files locally). This session has no Render
+   API key/CLI auth to set them directly. **User action needed:** Render
+   dashboard → `btp-backend` → Environment → set both vars → the service
+   redeploys automatically.
+3. **The tunnel URL is not stable**: every time `scripts/start-local-ml.ps1`
+   restarts, `ML_SERVICE_URL` on Render must be updated again to the new
+   `https://*.trycloudflare.com` hostname the script prints. This is a
+   property of the free Quick Tunnel, not a bug.
+4. **No browser automation tool was connected this session** — the frontend
+   changes are verified at the build/lint/code level and via direct backend
+   REST API calls (see above), not by actually clicking through the UI in a
+   real browser.
 
-Until (1)-(3) happen, the live production app is unchanged from before this
-session (frontend+backend live, ml-service still unreachable from
-production) — what changed is the *code* now committed and ready to deploy,
-verified locally (ml-service: 37/37 pytest incl. 5 real-GPU-inference tests;
-backend: 13/13 jest; frontend: build+lint clean), not yet verified in
-production because deploying it requires the above user actions.
+As of this writing: the laptop ml-service + tunnel are running and
+real-verified end-to-end via direct backend API calls (see above). The
+*publicly deployed* Vercel site and Render backend have NOT yet been
+pointed at this tunnel (blockers 1-2 above) — so the public URLs still
+behave exactly as documented before this session until the user completes
+those two dashboard actions.
 
 ## Current phase
 
@@ -234,18 +317,22 @@ production. Now only the Vite dev server gets that fallback
 same-origin relative path instead. Verified absent from the deployed bundle
 (see above).
 
-**Known, honestly-stated gap: ml-service (FastAPI/Whisper) is packaged for
-Render (2026-09-12) but still NOT deployed.** See the "2026-09-12 session"
-section at the top of this file for exactly what was built
-(`docker/ml-service.render.Dockerfile`, `requirements-render.txt`, the
-`btp-ml-service` block in `render.yaml`) and exactly why it isn't live yet
-(no Render API key/CLI auth in this session — a real credential blocker, not
-a skipped task). Consequence: the live frontend + backend chain is real and
-reachable, but `POST /api/sessions/:id/transcribe` and the correction
-endpoints will fail with a network error in production until
-`ML_SERVICE_URL` on Render's backend is pointed at a real deployed
-`btp-ml-service` URL instead of today's placeholder
-(`http://127.0.0.1:8000`, unreachable from Render's servers by construction).
+**Known, honestly-stated gap: ml-service runs on the user's laptop + a free
+Cloudflare Quick Tunnel (2026-09-12), real-verified end-to-end, but the
+*public* Render backend's env vars haven't been pointed at it yet.** See the
+"2026-09-12 session" "ml-service pivot" section above for the full story:
+Render's free tier was measured (not guessed) to be incapable of running any
+Bengali-script-correct Whisper configuration, so ml-service runs on the
+laptop instead (GTX 1650, confirmed working with the existing `large-v3`
+config) and is reached via `tools/cloudflared.exe`
+(`scripts/start-local-ml.ps1`). Consequence: the live frontend + backend
+chain is real and reachable, but `POST /api/sessions/:id/transcribe` and the
+correction endpoints on the *deployed* Render backend will fail with a
+network error until `ML_SERVICE_URL`/`ML_SERVICE_API_KEY` on Render are set
+to the laptop's current tunnel URL/secret (today's placeholder,
+`http://127.0.0.1:8000`, is unreachable from Render's servers by
+construction) — a Render-dashboard action only the account owner can do, see
+"Blocked on credentials" above.
 
 ## Environment (inspected 2026-09-05)
 
@@ -325,7 +412,7 @@ endpoints will fail with a network error in production until
 
 ## Test status (as of this writing, all verified locally, 2026-09-12 under `uv`)
 
-- ml-service: `uv run --directory ml-service python -m pytest tests/ -v` → **37 passed** (5 marked `@pytest.mark.model`, includes real GPU Whisper inference and real LaBSE embedding inference) — up from 32 (added `tests/test_correction_engine.py`, 5 tests, covering the multi-word-hypothesis fix + mode A/B semantic-score gating)
+- ml-service: `uv run --directory ml-service python -m pytest tests/ -v` → **38 passed** (5 marked `@pytest.mark.model`, includes real GPU Whisper inference and real LaBSE embedding inference) — up from 32 (added `tests/test_correction_engine.py` (5 tests, multi-word-hypothesis fix + mode A/B semantic-score gating) and a 401-without-API-key test in `test_api.py`)
 - backend: `npm test` → **13 passed** (Jest + mongodb-memory-server) — up from 5 (added `mlServiceClient.test.js`, `correctionsFlow.test.js`, `uploadValidation.test.js`)
 - frontend: `npm run build` → succeeds; `npm run lint` → clean
 

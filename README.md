@@ -35,17 +35,19 @@ See [`PROGRESS.md`](./PROGRESS.md) for exact state.
 - **Frontend (live):** https://frontend-three-psi-tz8kxezc8c.vercel.app
 - **Backend (live):** https://btp-backend-ofur.onrender.com (`GET /health`
   returns `{"status":"ok"}`; connected to a real MongoDB Atlas cluster)
-- **ml-service (Whisper/correction):** packaged for Render (CPU) as of
-  2026-09-12 — `docker/ml-service.render.Dockerfile` +
-  `ml-service/requirements-render.txt` + the `btp-ml-service` block in
-  `render.yaml` — but **not yet deployed**: creating it requires Render
-  dashboard/API access this session didn't have. The deployed
-  frontend+backend chain works for session/CORS/DB plumbing, but
-  transcription/correction requests will fail with a network error until
-  someone applies the Render Blueprint (exact steps in `PROGRESS.md`
-  "Blocked on credentials") and sets the backend's `ML_SERVICE_URL` to the
-  result. This is the one missing link for full end-to-end production
-  functionality.
+- **ml-service (Whisper/correction):** runs on the user's own laptop (real
+  GPU: NVIDIA GTX 1650), exposed over a free Cloudflare Quick Tunnel — see
+  `scripts/start-local-ml.ps1` and `ARCHITECTURE.md` "Local ML hosting +
+  tunnel". **Not on Render**: real measurement (2026-09-12) showed Render's
+  free 512MB web-service tier cannot run any faster-whisper size that
+  outputs correct Bengali script (see the table in `ARCHITECTURE.md`), and
+  no paid Render plan was used. Real-verified end-to-end (local backend ->
+  tunnel -> laptop Whisper -> correction candidates -> accept). The deployed
+  Render backend still needs its `ML_SERVICE_URL`/`ML_SERVICE_API_KEY` env
+  vars set to the laptop's current tunnel URL/secret (Render dashboard — see
+  `PROGRESS.md` "Blocked on credentials") before the public site's
+  transcription/correction requests will reach it; that URL changes whenever
+  the laptop/tunnel restarts.
 
 ## Local development environment (as inspected)
 

@@ -1,24 +1,25 @@
-# Render Blueprint for both deployable services (spec section 14/29):
-# - btp-backend: Node/Express, reachable by the Vercel frontend.
-# - btp-ml-service: FastAPI/Whisper, reachable only by btp-backend (never by
-#   the browser directly — see ARCHITECTURE.md).
+# Render Blueprint for the Node/Express backend (the only service this repo
+# deploys to Render — see ARCHITECTURE.md "Local ML hosting + tunnel" for why
+# ml-service is NOT deployed here).
+#
+# Why not Render for ml-service: real, measured evidence (2026-09-12, this
+# laptop) showed Render's free web-service tier (512MB RAM, 0.1 CPU) cannot
+# run a Bengali-script-correct faster-whisper configuration at all —
+# `tiny`/`base` (fit easily in 512MB) output romanized/Banglish text, not
+# Bengali script; `small` (499MB measured RSS, right at the memory ceiling)
+# outputs Devanagari-script transliteration, not Bengali script either; only
+# `medium`+ produced genuinely correct Bengali script, and `medium` alone
+# measured over 1GB RSS — categorically impossible on a 512MB instance. No
+# paid Render plan was purchased or is required; instead, ml-service runs on
+# the user's own laptop (GTX 1650, 4GB VRAM — already confirmed able to run
+# the full `large-v3`/cuda/int8_float16 configuration for real, correct
+# Bengali transcription) and is reached by this backend over a free
+# Cloudflare Quick Tunnel. See `scripts/start-local-ml.ps1`.
 #
 # Deploy: Render dashboard -> New -> Blueprint -> select this repo. Render
-# reads this file and creates both services; you'll be prompted to fill in
-# the `sync: false` env vars (secrets, or values only known after the other
-# service exists) since Render Blueprints can't safely auto-fill those.
-#
-# COST NOTE (a billing decision only the account owner can make, not
-# something this repo should decide for you): btp-ml-service's `plan` below
-# is intentionally left at Render's cheapest paid tier ("starter", ~512MB
-# RAM) to avoid silently committing you to a larger spend. Whisper `small` +
-# PyTorch + sentence-transformers/LaBSE may not reliably fit in 512MB — if
-# the service fails its health check or crashes under real load, upgrade
-# `plan` to `standard` (2GB) and/or raise WHISPER_MODEL_SIZE's accuracy
-# tradeoff down to `base`, per GPU_SETUP.md "Model size findings" and
-# ARCHITECTURE.md "Render ML service". This has NOT been verified against a
-# live Render instance in this session (no Render API key / CLI auth was
-# available) — verify for real after deploying, don't trust this comment.
+# reads this file and creates the service below; you'll be prompted to fill
+# in the `sync: false` env vars (secrets, or values that change whenever the
+# laptop's tunnel restarts).
 services:
   - type: web
     name: btp-backend
@@ -35,71 +36,36 @@ services:
         value: uri
       - key: MONGO_URI
         sync: false
-      # Set this to btp-ml-service's Render URL (e.g.
-      # https://btp-ml-service.onrender.com) once it's deployed below. Kept
-      # as sync:false (not a secret, just not knowable until that service
-      # exists) rather than a placeholder that would silently "work" with a
-      # 503 at request time — see services/mlServiceClient.js.
+      # The current Cloudflare Quick Tunnel URL printed by
+      # scripts/start-local-ml.ps1 when it's running on the laptop, e.g.
+      # https://some-random-words.trycloudflare.com — NOT stable: update this
+      # in the Render dashboard every time the laptop/tunnel restarts (Quick
+      # Tunnels get a new random hostname each run). See ARCHITECTURE.md.
       - key: ML_SERVICE_URL
         sync: false
+      # Must exactly match ML_SERVICE_API_KEY in the laptop's
+      # ml-service/.env — required once ml-service is reachable over the
+      # public internet. Never put the real value in this file or in git.
+      - key: ML_SERVICE_API_KEY
+        sync: false
+      # Generous: Whisper inference on a home GPU is fast, but the tunnel
+      # adds latency and the laptop may be doing other things.
       - key: ML_SERVICE_TIMEOUT_MS
-        value: "120000"
+        value: "180000"
       - key: CORS_ORIGIN
         value: https://frontend-three-psi-tz8kxezc8c.vercel.app
       - key: MAX_AUDIO_UPLOAD_MB
         value: "25"
 
-  # KNOWN LIMITATION, stated plainly: Render's free/starter web-service disk
-  # is ephemeral (wiped on redeploy/restart). AUDIO_STORAGE_DIR here is local
+  # KNOWN LIMITATION, stated plainly: Render's free web-service disk is
+  # ephemeral (wiped on redeploy/restart). AUDIO_STORAGE_DIR here is local
   # filesystem, matching current dev behavior — fine for a demo/prototype,
   # but per spec section 15/11 real production audio storage should move to
   # object storage (e.g. S3) before this is relied on for anything users
   # need to persist long-term. Not blocking for a working demo flow.
-
-  - type: web
-    name: btp-ml-service
-    runtime: docker
-    plan: starter # see COST NOTE above — bump to `standard` if this OOMs
-    dockerfilePath: ./docker/ml-service.render.Dockerfile
-    dockerContext: ./ml-service
-    healthCheckPath: /health
-    envVars:
-      # --- CPU-practical defaults for Render, NOT the research/L40 config ---
-      # The institute-GPU / local-dev default (WHISPER_MODEL_SIZE=large-v3,
-      # WHISPER_DEVICE=cuda) lives in .env.example and is preserved there —
-      # see ARCHITECTURE.md "Render ML service" for why `small` is the
-      # starting point here instead: large-v3 at int8 needs ~3GB+ RAM and a
-      # much longer/heavier build, impractical on Render's cheapest compute.
-      # `small` was observed (GPU_SETUP.md "Model size findings", ONE
-      # smoke-tested sample, not a rigorous benchmark) to sometimes output
-      # wrong-script transliteration for Bengali — re-verify real Bengali
-      # script correctness against this live deployment before trusting it;
-      # if it's wrong, the next config-only (no code change) step up is
-      # WHISPER_MODEL_SIZE=medium on a `standard`-or-larger plan.
-      - key: WHISPER_MODEL_SIZE
-        value: small
-      - key: WHISPER_DEVICE
-        value: cpu
-      - key: WHISPER_COMPUTE_TYPE
-        value: int8
-      - key: WHISPER_LANGUAGE
-        value: bn
-      - key: WHISPER_BEAM_SIZE
-        value: "5"
-      - key: SEMANTIC_DEVICE
-        value: cpu
-      # The OpenSLR lexicon TSV (data/raw/openslr_53/...) is gitignored and
-      # is NOT shipped in this image (spec section 12: no raw dataset in
-      # Git) — lexicon-augmented candidates would silently no-op anyway
-      # (phonetics/lexicon.py's is_available() check), but disabling this
-      # explicitly documents that the Render deployment runs on raw Whisper
-      # re-transcription + LaBSE/phonetic scoring only, not the
-      # lexicon-augmented path used in EXPERIMENTS.md's evaluation runs.
-      - key: CORRECTION_LEXICON_CONSTRAINT_ENABLED
-        value: "false"
-      - key: PREPROC_RESAMPLE
-        value: "true"
-      - key: PREPROC_TARGET_SR
-        value: "16000"
-      - key: PREPROC_MONO
-        value: "true"
+  #
+  # ALSO WORTH KNOWING: Render's free web-service plan spins the SERVER
+  # (this backend) down after 15 minutes of inactivity too, same as any free
+  # tier — the first request after a spin-down will be slow (cold start)
+  # before it even reaches the ML step. This is a Render free-tier property,
+  # independent of the laptop ML arrangement above.
